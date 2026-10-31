@@ -8,7 +8,10 @@ import confetti from 'canvas-confetti';
 import { sound } from './utils/audio';
 import { storage, supabase } from './utils/storage';
 
-const TAG_OPTIONS = ['WORK', 'DEV', 'LIFE', 'HEALTH', 'RETRO', 'URGENT', 'CSV'];
+// Helper to normalize tag formatting (#TAG vs TAG)
+export const normalizeTag = (t) => (t ? (t.startsWith('#') ? t.toUpperCase() : `#${t.toUpperCase()}`) : '#WORK');
+
+const TAG_OPTIONS = ['#WORK', '#DEV', '#LIFE', '#HEALTH', '#RETRO', '#URGENT', '#CSV'];
 const PRIORITY_OPTIONS = [
   { value: 'LOW', label: '[!] LOW', color: 'bg-neutral-100 text-neutral-800' },
   { value: 'MEDIUM', label: '[!!] MED', color: 'bg-neutral-200 text-black font-bold' },
@@ -34,7 +37,10 @@ export default function TaskDesk({
   selectedCategory,
   onSelectCategory,
   currentFilter: propCurrentFilter,
+  selectedTag: propSelectedTag,
+  activeFilter: propActiveFilter,
   onSelectFilter,
+  onSelectTag,
 }) {
   // Local tasks state initialized from prop and synchronized
   const [tasks, setTasks] = useState(initialTasks || []);
@@ -48,30 +54,33 @@ export default function TaskDesk({
   const [newDate, setNewDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [newTime, setNewTime] = useState('10:00');
   const [newPriority, setNewPriority] = useState('MEDIUM');
-  const [newTag, setNewTag] = useState('WORK');
+  const [newTag, setNewTag] = useState('#WORK');
   const [newReminder, setNewReminder] = useState('15m');
   const [showAdvancedAdd, setShowAdvancedAdd] = useState(false);
 
   // Search & Filtering state
   const [searchQuery, setSearchQuery] = useState('');
-  // Current filter state for tag filtering (e.g. 'ALL', 'WORK', 'HEALTH')
-  const [currentFilter, setCurrentFilter] = useState(propCurrentFilter || selectedCategory || 'ALL');
+  
+  // Category / tag filter state (e.g. '#ALL', '#WORK', '#HEALTH')
+  const [selectedTag, setSelectedTag] = useState(() => {
+    const init = propSelectedTag || propCurrentFilter || propActiveFilter || selectedCategory;
+    return init ? (init === 'ALL' || init === '#ALL' ? '#ALL' : normalizeTag(init)) : '#ALL';
+  });
 
   useEffect(() => {
-    if (propCurrentFilter !== undefined) {
-      setCurrentFilter(propCurrentFilter);
-    } else if (selectedCategory !== undefined) {
-      setCurrentFilter(selectedCategory);
+    const incoming = propSelectedTag || propCurrentFilter || propActiveFilter || selectedCategory;
+    if (incoming !== undefined) {
+      setSelectedTag(incoming === 'ALL' || incoming === '#ALL' ? '#ALL' : normalizeTag(incoming));
     }
-  }, [propCurrentFilter, selectedCategory]);
+  }, [propSelectedTag, propCurrentFilter, propActiveFilter, selectedCategory]);
 
-  // Backward compatibility alias: activeTag references currentFilter
-  const activeTag = currentFilter;
-  const setActiveTag = (tag) => {
-    setCurrentFilter(tag);
-    if (onSelectFilter) onSelectFilter(tag);
-    if (onSelectCategory) onSelectCategory(tag);
-  };
+  // Aliases for compatibility
+  const currentFilter = selectedTag;
+  const setCurrentFilter = setSelectedTag;
+  const activeFilter = selectedTag;
+  const setActiveFilter = setSelectedTag;
+  const activeTag = selectedTag;
+  const setActiveTag = setSelectedTag;
 
   const [viewFilter, setViewFilter] = useState('all'); // 'all', 'today', 'upcoming', 'overdue'
   
@@ -86,11 +95,13 @@ export default function TaskDesk({
 
   // Dynamic tags computed from preset options and all existing task custom tags
   const allAvailableTags = useMemo(() => {
-    const customTags = tasks.map(t => (t.tag || '').toUpperCase().replace(/^#/, '')).filter(Boolean);
-    return Array.from(new Set([...TAG_OPTIONS, ...customTags]));
+    const customTags = tasks.map(t => normalizeTag(t.tag)).filter(Boolean);
+    const presetTags = TAG_OPTIONS.map(t => normalizeTag(t));
+    return Array.from(new Set([...presetTags, ...customTags]));
   }, [tasks]);
 
-  // fetchTasks loads data from Supabase on mount and maps tag and title columns correctly into local state
+  // fetchTasks loads data from Supabase ONLY ONCE on initial mount (or after explicit add/delete/import)
+  // and stores using setTasks(data || []) - replacing, never appending.
   const fetchTasks = async (userId) => {
     if (!supabase) return;
     try {
@@ -112,20 +123,18 @@ export default function TaskDesk({
         return;
       }
 
-      if (data) {
-        // Map database columns correctly into local state, specifically tag and title
-        const mappedTasks = data.map((item) => ({
-          ...item,
-          title: item.title,
-          tag: item.tag || 'WORK',
-        }));
+      // Map database columns correctly into local state, normalizing tag
+      const mappedTasks = (data || []).map((item) => ({
+        ...item,
+        title: item.title,
+        tag: normalizeTag(item.tag),
+      }));
 
-        setTasks(mappedTasks);
+      // Store using setTasks(data || []) - replacing, never appending
+      setTasks(mappedTasks);
 
-        if (onImportTasks) {
-          onImportTasks(mappedTasks);
-        }
-      }
+      // Overwrite localStorage cache cleanly with Supabase array rather than merging
+      storage.saveTasks(mappedTasks);
     } catch (err) {
       console.error('Failed to fetch tasks from Supabase:', err);
     }
@@ -177,7 +186,8 @@ export default function TaskDesk({
       userId = session?.user?.id;
     }
 
-    const cleanTag = newTag ? newTag.trim().replace(/^#/, '').toUpperCase() : 'WORK';
+    // Normalize tag when creating tasks
+    const cleanTag = normalizeTag(newTag || 'WORK');
 
     const newTask = {
       id: 'task-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
@@ -205,7 +215,10 @@ export default function TaskDesk({
       }
     }
 
-    onAddTask(newTask);
+    setTasks(prev => [newTask, ...prev.filter(t => t.id !== newTask.id)]);
+    if (onAddTask) {
+      onAddTask(newTask);
+    }
     setNewTitle('');
   };
 
@@ -261,7 +274,7 @@ export default function TaskDesk({
         }
 
         // Custom given category from Quick-Add bar if CSV row has no category
-        const customFallbackCategory = (newTag && newTag.trim() ? newTag.trim() : (currentFilter !== 'ALL' ? currentFilter : 'WORK')).replace(/^#/, '').toUpperCase();
+        const customFallbackCategory = normalizeTag(newTag || selectedTag || 'WORK');
 
         lines.forEach((line, index) => {
           // Destructure 5 variables from the CSV row: [description, date, time, priority, category]
@@ -307,14 +320,14 @@ export default function TaskDesk({
             formattedPriority = 'LOW';
           }
 
-          // Clean custom category
-          const cleanCustomCat = (rowCategory && rowCategory.trim()) ? rowCategory.trim().replace(/^#/, '').toUpperCase() : '';
+          // Normalize tag using normalizeTag when importing CSV rows
+          const appliedTag = normalizeTag(rowCategory || customFallbackCategory);
 
           // Construct task object: strictly map description -> title, category -> tag, completed -> false, user_id
           const taskObj = {
             id: 'task-csv-' + Date.now() + '-' + index + '-' + Math.random().toString(36).substr(2, 4),
             title: description,
-            tag: category ? (cleanCustomCat || customFallbackCategory) : customFallbackCategory,
+            tag: appliedTag,
             date: formattedDate,
             time: formattedTime,
             priority: formattedPriority,
@@ -339,16 +352,23 @@ export default function TaskDesk({
             } catch (err) {
               console.error('Supabase CSV insert failed:', err);
             }
-          }
-
-          if (onImportTasks) {
-            onImportTasks(newTasks);
+            // Fetch once from Supabase to replace local state with single source of truth
+            await fetchTasks(userId);
           } else {
-            storage.addTasks(newTasks);
+            setTasks(prev => {
+              const prevIds = new Set(prev.map(t => t.id));
+              const filteredNew = newTasks.filter(t => !prevIds.has(t.id));
+              const combined = [...filteredNew, ...prev];
+              storage.saveTasks(combined);
+              return combined;
+            });
+            if (onImportTasks) {
+              onImportTasks(newTasks);
+            }
           }
 
           const appliedTag = newTasks[0].tag;
-          setCsvStatusMessage(`SUCCESS: Imported ${newTasks.length} tasks under category #${appliedTag}!`);
+          setCsvStatusMessage(`SUCCESS: Imported ${newTasks.length} tasks under category ${appliedTag}!`);
           setTimeout(() => setCsvStatusMessage(''), 5000);
         } else {
           setCsvStatusMessage('No valid task rows could be parsed from the CSV file.');
@@ -368,15 +388,15 @@ export default function TaskDesk({
   const handleRetagCsvTasks = async () => {
     const targetTag = prompt('Enter custom category/tag for these tasks (e.g. PCECT303, STUDY, WORK):', newTag || 'STUDY');
     if (!targetTag || !targetTag.trim()) return;
-    const cleanTag = targetTag.trim().replace(/^#/, '').toUpperCase();
+    const cleanTag = normalizeTag(targetTag.trim());
 
-    // Determine tasks to re-tag: tasks with current active tag or tasks tagged CSV
-    const tasksToRetag = currentFilter !== 'ALL' 
-      ? tasks.filter(t => t.tag === currentFilter)
-      : tasks.filter(t => (t.tag || '').toUpperCase() === 'CSV');
+    // Determine tasks to re-tag: tasks with current active tag or tasks tagged #CSV
+    const tasksToRetag = (selectedTag !== '#ALL' && selectedTag !== 'ALL')
+      ? tasks.filter(t => normalizeTag(t.tag) === normalizeTag(selectedTag))
+      : tasks.filter(t => normalizeTag(t.tag) === '#CSV');
 
     if (tasksToRetag.length === 0) {
-      alert(`No tasks found with tag #${currentFilter !== 'ALL' ? currentFilter : 'CSV'}.`);
+      alert(`No tasks found with tag ${selectedTag !== '#ALL' ? selectedTag : '#CSV'}.`);
       return;
     }
 
@@ -391,12 +411,18 @@ export default function TaskDesk({
       }
     }
 
+    setTasks(prev => {
+      const updated = prev.map(t => tasksToRetag.some(r => r.id === t.id) ? { ...t, tag: cleanTag } : t);
+      storage.saveTasks(updated);
+      return updated;
+    });
+
     tasksToRetag.forEach(t => {
       onUpdateTask(t.id, { tag: cleanTag });
     });
 
-    setActiveTag(cleanTag);
-    setCsvStatusMessage(`SUCCESS: Retagged ${tasksToRetag.length} tasks to #${cleanTag}!`);
+    setSelectedTag(cleanTag);
+    setCsvStatusMessage(`SUCCESS: Retagged ${tasksToRetag.length} tasks to ${cleanTag}!`);
     setTimeout(() => setCsvStatusMessage(''), 5000);
   };
 
@@ -504,21 +530,16 @@ export default function TaskDesk({
   };
 
   // Filter tasks based on tag filter, view filter and search query
+  // Category filtering (#ALL, #WORK, #HEALTH, etc.) is a pure derived variable calculated during render
+  // without mutating or re-setting the tasks state
   const filteredTasks = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
 
     return tasks.filter(task => {
-      // Tag filter button evaluation:
-      // Evaluated using strict equality against the database `tag` column (e.g., task.tag === currentFilter)
-      // Do not use .includes() or loose string matching on the title/description for the tag filter buttons
-      if (currentFilter && currentFilter !== 'ALL') {
-        if (task.tag === currentFilter) {
-          // Strict equality match against database tag column
-        } else if (currentFilter.startsWith('#') && task.tag === currentFilter.slice(1)) {
-          // Strict equality match when filter has leading hash
-        } else {
-          return false;
-        }
+      // Category filtering: compare normalizeTag(task.tag) === normalizeTag(selectedTag) so #WORK and #HEALTH never mix
+      if (selectedTag && selectedTag !== '#ALL' && selectedTag !== 'ALL') {
+        const matchesTag = normalizeTag(task.tag) === normalizeTag(selectedTag);
+        if (!matchesTag) return false;
       }
 
       // View Filter
@@ -541,7 +562,7 @@ export default function TaskDesk({
 
       return true;
     });
-  }, [tasks, currentFilter, viewFilter, searchQuery]);
+  }, [tasks, selectedTag, viewFilter, searchQuery]);
 
   // Multi-level sort:
   // 1. Sort chronologically in ascending order by task.date
@@ -783,30 +804,38 @@ export default function TaskDesk({
         {/* Category Tag Pills */}
         <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs">
           <span className="text-[10px] font-pixel text-neutral-600 mr-1 flex-shrink-0">FILTER TAG:</span>
-          {['ALL', ...allAvailableTags].map((tag) => (
-            <button
-              key={tag}
-              onClick={() => {
-                sound.playClick();
-                setCurrentFilter(tag);
-                if (onSelectFilter) onSelectFilter(tag);
-                if (onSelectCategory) onSelectCategory(tag);
-              }}
-              className={`px-1.5 py-0.5 border text-[10px] font-mono flex-shrink-0 ${
-                currentFilter === tag
-                  ? 'bg-black text-white border-black font-bold'
-                  : 'bg-white border-black hover:bg-neutral-100'
-              }`}
-            >
-              #{tag}
-            </button>
-          ))}
+          {['#ALL', ...allAvailableTags].map((tag) => {
+            const isAll = tag === '#ALL' || tag === 'ALL';
+            const isSelected = isAll
+              ? (selectedTag === '#ALL' || selectedTag === 'ALL')
+              : normalizeTag(selectedTag) === normalizeTag(tag);
+
+            return (
+              <button
+                key={tag}
+                onClick={() => {
+                  sound.playClick();
+                  setSelectedTag(tag);
+                  if (onSelectFilter) onSelectFilter(tag);
+                  if (onSelectTag) onSelectTag(tag);
+                  if (onSelectCategory) onSelectCategory(tag);
+                }}
+                className={`px-1.5 py-0.5 border text-[10px] font-mono flex-shrink-0 ${
+                  isSelected
+                    ? 'bg-black text-white border-black font-bold'
+                    : 'bg-white border-black hover:bg-neutral-100'
+                }`}
+              >
+                {tag.startsWith('#') ? tag : `#${tag}`}
+              </button>
+            );
+          })}
           {/* Retag / Change Category Button if tasks are tagged #CSV */}
-          {tasks.some(t => (t.tag || '').toUpperCase() === 'CSV') && (
+          {tasks.some(t => normalizeTag(t.tag) === '#CSV') && (
             <button
               onClick={handleRetagCsvTasks}
               className="px-2 py-0.5 border border-black bg-neutral-200 hover:bg-black hover:text-white font-pixel text-[9px] flex-shrink-0 ml-1 shadow-[1px_1px_0px_#000]"
-              title="Change all #CSV tasks to your custom category (e.g. PCECT303 or STUDY)"
+              title="Change all #CSV tasks to your custom category (e.g. #PCECT303 or #STUDY)"
             >
               [RETAG #CSV TASKS]
             </button>

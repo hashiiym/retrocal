@@ -5,8 +5,8 @@ const STORAGE_KEY = 'retrocal_tasks_v1';
 const USER_KEY = 'retrocal_auth_user';
 
 // Read Supabase credentials from Vite environment variables
-const SUPABASE_ENV_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ENV_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_ENV_URL = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env.VITE_SUPABASE_URL : undefined;
+const SUPABASE_ENV_ANON_KEY = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env.VITE_SUPABASE_ANON_KEY : undefined;
 
 // Single shared Supabase client instance
 export const supabase = (SUPABASE_ENV_URL && SUPABASE_ENV_ANON_KEY)
@@ -34,6 +34,9 @@ const syncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in windo
   ? new BroadcastChannel('retrocal_sync_channel')
   : null;
 
+// Helper to normalize tag formatting (#TAG vs TAG)
+export const normalizeTag = (t) => (t ? (t.startsWith('#') ? t.toUpperCase() : `#${t.toUpperCase()}`) : '#WORK');
+
 // Initial sample tasks
 export const INITIAL_TASKS = [
   {
@@ -43,7 +46,7 @@ export const INITIAL_TASKS = [
     date: new Date().toISOString().split('T')[0],
     time: '09:00',
     priority: 'HIGH',
-    tag: 'DESIGN',
+    tag: '#DESIGN',
     notes: 'Strict monochrome 1-bit palette with dithered desk pattern.',
     reminder: '15m',
     createdAt: Date.now() - 3600000,
@@ -55,7 +58,7 @@ export const INITIAL_TASKS = [
     date: new Date().toISOString().split('T')[0],
     time: '11:30',
     priority: 'HIGH',
-    tag: 'DEV',
+    tag: '#DEV',
     notes: 'Toggle between Daily agenda, Weekly 7-day view, and Monthly matrix.',
     reminder: 'at_time',
     createdAt: Date.now() - 1800000,
@@ -67,7 +70,7 @@ export const INITIAL_TASKS = [
     date: new Date().toISOString().split('T')[0],
     time: '14:00',
     priority: 'MEDIUM',
-    tag: 'INTEGRATION',
+    tag: '#INTEGRATION',
     notes: 'Fetch external Google Calendar events alongside RetroCal tasks.',
     reminder: '15m',
     createdAt: Date.now() - 900000,
@@ -79,7 +82,7 @@ export const INITIAL_TASKS = [
     date: new Date(Date.now() + 86400000).toISOString().split('T')[0], // Tomorrow
     time: '10:00',
     priority: 'HIGH',
-    tag: 'ALERTS',
+    tag: '#ALERTS',
     notes: 'Confirm browser notification fires with retro audio beep.',
     reminder: '5m',
     createdAt: Date.now() - 600000,
@@ -91,7 +94,7 @@ export const INITIAL_TASKS = [
     date: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0], // +2 days
     time: '16:30',
     priority: 'LOW',
-    tag: 'CLOUD',
+    tag: '#CLOUD',
     notes: 'Connect Supabase PostgreSQL or Firebase for live multi-device sync.',
     reminder: '1h',
     createdAt: Date.now() - 300000,
@@ -200,11 +203,14 @@ export class StorageManager {
       const { data, error } = await query;
 
       if (error) throw error;
-      if (data && data.length > 0) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        this.notifyListeners(data, true);
-        return data;
-      }
+      const taskList = (data || []).map(t => ({
+        ...t,
+        tag: normalizeTag(t.tag),
+      }));
+      // Overwrite localStorage cache cleanly with Supabase array rather than merging
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(taskList));
+      this.notifyListeners(taskList, true);
+      return taskList;
     } catch (err) {
       console.error('Failed to fetch tasks from Supabase:', err);
     }
@@ -215,13 +221,21 @@ export class StorageManager {
   getTasks() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (!saved) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_TASKS));
-        return INITIAL_TASKS;
+      if (saved !== null) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.map(t => ({ ...t, tag: normalizeTag(t.tag) }));
+        }
       }
-      return JSON.parse(saved);
+      // If user is logged in, Supabase is single source of truth - do not merge with sample tasks
+      if (this.currentUserId) {
+        return [];
+      }
+      const initialWithTags = INITIAL_TASKS.map(t => ({ ...t, tag: normalizeTag(t.tag) }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(initialWithTags));
+      return initialWithTags;
     } catch {
-      return INITIAL_TASKS;
+      return this.currentUserId ? [] : INITIAL_TASKS.map(t => ({ ...t, tag: normalizeTag(t.tag) }));
     }
   }
 
@@ -249,15 +263,17 @@ export class StorageManager {
     const newTask = {
       ...task,
       id: task.id || ('task-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4)),
+      tag: normalizeTag(task.tag),
       createdAt: task.createdAt || Date.now(),
       completed: Boolean(task.completed),
     };
-    const updated = [newTask, ...current];
+    const filtered = current.filter(t => t.id !== newTask.id);
+    const updated = [newTask, ...filtered];
     this.saveTasks(updated);
     return newTask;
   }
 
-  // Batch append tasks (e.g. from CSV import)
+  // Batch append tasks (e.g. from CSV import) with clean deduplication
   addTasks(newTasksArray) {
     if (!Array.isArray(newTasksArray) || newTasksArray.length === 0) return [];
     const current = this.getTasks();
@@ -266,11 +282,14 @@ export class StorageManager {
       id: t.id || ('task-' + Date.now() + '-' + idx + '-' + Math.random().toString(36).substr(2, 4)),
       createdAt: t.createdAt || (Date.now() + idx),
       completed: Boolean(t.completed),
-      tag: t.tag || 'WORK',
+      tag: normalizeTag(t.tag),
       reminder: t.reminder || '15m',
       notes: t.notes || '',
     }));
-    const updated = [...formatted, ...current];
+    // Clean deduplication by id so tasks are never doubled
+    const newIds = new Set(formatted.map(t => t.id));
+    const filteredCurrent = current.filter(t => !newIds.has(t.id));
+    const updated = [...formatted, ...filteredCurrent];
     this.saveTasks(updated);
     return formatted;
   }
