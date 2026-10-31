@@ -9,6 +9,7 @@ import GoogleSyncModal from './components/GoogleSyncModal';
 import ApiGuideModal from './components/ApiGuideModal';
 import RetroAlertModal from './components/RetroAlertModal';
 import HelpModal from './components/HelpModal';
+import RetroPomodoro from './RetroPomodoro';
 import { storage } from './utils/storage';
 import { notifications } from './utils/notifications';
 import { googleCalendar } from './utils/googleCalendar';
@@ -125,6 +126,9 @@ export default function App() {
         user={user}
         isGCalConnected={googleCalendar.connected}
       />
+
+      {/* Global Retro Pomodoro Flip Clock (anchored fixed top-12 right-4) */}
+      <RetroPomodoro />
 
       {/* Main Workspace Desktop Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-2 sm:p-4 space-y-4">
