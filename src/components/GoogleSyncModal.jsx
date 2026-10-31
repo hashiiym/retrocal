@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import RetroWindow from './RetroWindow';
 import { googleCalendar } from '../utils/googleCalendar';
 import { sound } from '../utils/audio';
-import { Calendar, Upload, Key, CheckCircle, RefreshCw } from 'lucide-react';
+import { Calendar, Upload, Key, CheckCircle, AlertCircle, RefreshCw, LogIn } from 'lucide-react';
 
 export default function GoogleSyncModal({ isOpen, onClose, onRefresh }) {
   const [enabled, setEnabled] = useState(googleCalendar.enabled);
   const [importStatus, setImportStatus] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const envStatus = googleCalendar.getEnvStatus();
 
   if (!isOpen) return null;
@@ -18,11 +20,34 @@ export default function GoogleSyncModal({ isOpen, onClose, onRefresh }) {
     if (onRefresh) onRefresh();
   };
 
+  const handleLiveGoogleOAuth = () => {
+    sound.playClick();
+    setIsSyncing(true);
+    setErrorMessage('');
+    setImportStatus('');
+
+    googleCalendar.requestGoogleAuthAndSync(
+      (count) => {
+        setIsSyncing(false);
+        sound.playComplete();
+        setImportStatus(`LIVE SYNC SUCCESS: Loaded ${count} events from your Google Calendar!`);
+        setEnabled(true);
+        if (onRefresh) onRefresh();
+      },
+      (error) => {
+        setIsSyncing(false);
+        sound.playDelete();
+        setErrorMessage(error);
+      }
+    );
+  };
+
   const handleLoadDemo = () => {
     sound.playClick();
     googleCalendar.connectDemoEvents();
     setEnabled(true);
-    setImportStatus('Loaded 4 demo Google Calendar meetings (Team Sync, Sprint Demo, etc.)');
+    setImportStatus('Loaded 4 sample Google Calendar meetings (Team Sync, Sprint Demo, etc.)');
+    setErrorMessage('');
     if (onRefresh) onRefresh();
   };
 
@@ -36,6 +61,7 @@ export default function GoogleSyncModal({ isOpen, onClose, onRefresh }) {
       if (typeof content === 'string') {
         const count = googleCalendar.importICS(content);
         setImportStatus(`Successfully imported ${count} events from ${file.name}!`);
+        setErrorMessage('');
         if (onRefresh) onRefresh();
       }
     };
@@ -58,45 +84,84 @@ export default function GoogleSyncModal({ isOpen, onClose, onRefresh }) {
               <div>
                 <span className="font-pixel text-[11px] block font-bold">UNIFIED CALENDAR VIEW</span>
                 <span className="text-[11px] text-neutral-600">
-                  Display Google events alongside RetroCal to-dos.
+                  {enabled ? 'Google events are visible in calendar' : 'Google events are currently hidden'}
                 </span>
               </div>
               <button
                 onClick={handleToggle}
                 className={`px-3 py-1 text-xs font-pixel border border-black ${enabled ? 'bg-black text-white font-bold' : 'bg-white hover:bg-neutral-200'}`}
               >
-                {enabled ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+                {enabled ? 'SHOWN [ON]' : 'HIDDEN [OFF]'}
               </button>
             </div>
 
+            {/* Success notification */}
             {importStatus && (
-              <div className="p-2 border border-black bg-neutral-50 text-[11px] font-bold text-black flex items-center gap-1.5">
-                <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
+              <div className="p-2 border border-black bg-neutral-50 text-[11px] font-bold text-black flex items-center gap-1.5 shadow-[2px_2px_0px_#000]">
+                <CheckCircle className="w-4 h-4 flex-shrink-0 text-black" />
                 <span>{importStatus}</span>
               </div>
             )}
 
-            {/* Option 1: Instant Demo Data */}
+            {/* Error notification */}
+            {errorMessage && (
+              <div className="p-2 border-2 border-black bg-white text-[11px] font-bold text-black space-y-1 shadow-[2px_2px_0px_#000]">
+                <div className="flex items-center gap-1.5 text-black font-pixel text-[10px]">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>OAUTH CONFIGURATION NOTICE</span>
+                </div>
+                <p className="text-[10px] text-neutral-700 font-mono font-normal">
+                  {errorMessage}
+                </p>
+                <p className="text-[9px] text-neutral-500 font-mono italic">
+                  Tip: In Google Cloud Console &gt; Credentials &gt; OAuth 2.0 Client, add <code>http://localhost:5173</code> and your Vercel URL to "Authorized JavaScript origins".
+                </p>
+              </div>
+            )}
+
+            {/* Option 1: Live Google Account OAuth Login Button */}
+            <div className="border-2 border-black p-3 bg-white space-y-2 shadow-[2px_2px_0px_#000]">
+              <div className="flex items-center justify-between">
+                <span className="font-pixel text-[10px] font-bold">1. LIVE GOOGLE ACCOUNT SYNC</span>
+                <span className="text-[9px] bg-black text-white px-1 font-mono">OAUTH 2.0</span>
+              </div>
+              
+              <p className="text-[11px] text-neutral-600">
+                Sign in with Google to fetch your actual upcoming calendar meetings into RetroCal.
+              </p>
+
+              <button
+                type="button"
+                onClick={handleLiveGoogleOAuth}
+                disabled={isSyncing}
+                className="w-full py-2 border-2 border-black bg-white hover:bg-neutral-100 flex items-center justify-center gap-2 font-pixel text-[11px] shadow-[2px_2px_0px_#000] active:translate-x-[1px] active:translate-y-[1px]"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>{isSyncing ? 'CONNECTING TO GOOGLE...' : 'SIGN IN & SYNC GOOGLE CALENDAR'}</span>
+              </button>
+            </div>
+
+            {/* Option 2: Sample Meetings (Zero-config instant check) */}
             <div className="border border-black p-3 bg-white space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-pixel text-[10px] font-bold">1. SAMPLE CALENDAR EVENTS</span>
+                <span className="font-pixel text-[10px] font-bold">2. SAMPLE GOOGLE MEETINGS</span>
                 <button
                   onClick={handleLoadDemo}
                   className="retro-btn px-2 py-0.5 text-[10px]"
                 >
-                  LOAD DEMO MEETINGS
+                  LOAD SAMPLE EVENTS
                 </button>
               </div>
               <p className="text-[11px] text-neutral-600">
-                Populates your calendar with realistic Google Meet & client meetings so you can immediately test the unified day/week/month schedule.
+                Populates your calendar with realistic sample meetings (Team Sync, Sprint Demo) so you can immediately see the unified schedule.
               </p>
             </div>
 
-            {/* Option 2: Import .ICS file or paste iCal */}
+            {/* Option 3: Import .ICS file */}
             <div className="border border-black p-3 bg-white space-y-2">
-              <span className="font-pixel text-[10px] block font-bold">2. IMPORT .ICS / CALENDAR FILE</span>
+              <span className="font-pixel text-[10px] block font-bold">3. IMPORT .ICS FILE (OFFLINE EXPORT)</span>
               <p className="text-[11px] text-neutral-600">
-                Export your Google Calendar or Apple Calendar as a <code className="bg-neutral-200 px-1">.ics</code> file and upload it directly:
+                Export any Google or Apple Calendar to an <code className="bg-neutral-200 px-1">.ics</code> file and load it directly:
               </p>
               
               <div className="flex items-center gap-2">
@@ -110,33 +175,20 @@ export default function GoogleSyncModal({ isOpen, onClose, onRefresh }) {
                     className="hidden"
                   />
                 </label>
-                <span className="text-[10px] text-neutral-500">Supports standard iCal (.ics) exports</span>
+                <span className="text-[10px] text-neutral-500">Instant local import</span>
               </div>
             </div>
 
-            {/* Option 3: Environment Variable Status (Replaces manual key inputs) */}
-            <div className="border border-black p-3 bg-neutral-50 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="font-pixel text-[10px] font-bold">3. GOOGLE API ENVIRONMENT STATUS (.env)</span>
-                <span className={`px-1.5 py-0.5 text-[9px] font-pixel border border-black ${envStatus.connected ? 'bg-black text-white' : 'bg-neutral-200 text-neutral-700'}`}>
-                  {envStatus.connected ? 'ENV ACTIVE' : 'NO ENV KEYS'}
-                </span>
+            {/* Environment Variable Status */}
+            <div className="border border-black p-2.5 bg-neutral-100 space-y-1 text-[11px]">
+              <div className="flex items-center justify-between font-bold text-[10px] font-pixel">
+                <span>GOOGLE CLIENT ID (.env):</span>
+                <span>{envStatus.hasClientId ? 'CONFIGURED' : 'NOT SET'}</span>
               </div>
-
-              <div className="text-[11px] space-y-1 text-neutral-700">
-                <div className="flex items-center justify-between">
-                  <span>VITE_GOOGLE_CLIENT_ID:</span>
-                  <span className="font-mono">{envStatus.hasClientId ? 'CONFIGURED' : 'NOT SET'}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>VITE_GOOGLE_API_KEY:</span>
-                  <span className="font-mono">{envStatus.hasApiKey ? 'CONFIGURED' : 'NOT SET'}</span>
-                </div>
+              <div className="flex items-center justify-between text-neutral-600 text-[10px]">
+                <span>Status:</span>
+                <span>{envStatus.connected ? '🟢 Credentials Active' : '⚪ Missing Credentials'}</span>
               </div>
-
-              <p className="text-[10px] text-neutral-500 pt-1 border-t border-neutral-300">
-                Google Calendar credentials are now initialized via environment variables. Set them in your <code className="bg-neutral-100 px-1">.env</code> file.
-              </p>
             </div>
 
             <div className="pt-1 flex justify-end">

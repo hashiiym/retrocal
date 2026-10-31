@@ -227,6 +227,61 @@ class GoogleCalendarManager {
     }
   }
 
+  // Trigger Google Identity Services (GIS) OAuth popup and sync live events
+  requestGoogleAuthAndSync(onSuccess, onError) {
+    if (!this.clientId) {
+      if (onError) onError('Google Client ID is missing. Ensure VITE_GOOGLE_CLIENT_ID is set in .env.');
+      return;
+    }
+
+    if (typeof window === 'undefined') return;
+
+    const startOAuth = () => {
+      try {
+        if (!window.google?.accounts?.oauth2) {
+          throw new Error('Google Identity Services SDK is not loaded. Check your internet connection.');
+        }
+
+        const client = window.google.accounts.oauth2.initTokenClient({
+          client_id: this.clientId,
+          scope: 'https://www.googleapis.com/auth/calendar.events.readonly',
+          callback: async (tokenResponse) => {
+            if (tokenResponse.error) {
+              if (onError) onError(`Google OAuth Error: ${tokenResponse.error_description || tokenResponse.error}`);
+              return;
+            }
+            if (tokenResponse.access_token) {
+              const ok = await this.fetchLiveGoogleCalendarEvents(tokenResponse.access_token);
+              if (ok) {
+                if (onSuccess) onSuccess(this.events.length);
+              } else {
+                if (onError) onError('Connected to Google, but failed to fetch events. Verify Google Calendar API is enabled in GCP Console.');
+              }
+            }
+          },
+        });
+
+        client.requestAccessToken();
+      } catch (err) {
+        if (onError) onError(err.message || 'Google OAuth failed.');
+      }
+    };
+
+    if (window.google?.accounts?.oauth2) {
+      startOAuth();
+    } else {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = () => startOAuth();
+      script.onerror = () => {
+        if (onError) onError('Could not load Google Identity Services library.');
+      };
+      document.body.appendChild(script);
+    }
+  }
+
   // Live Google Calendar API v3 fetch via access token
   async fetchLiveGoogleCalendarEvents(accessToken) {
     if (!accessToken && !this.apiKey) return false;
