@@ -2,20 +2,16 @@ import React, { useState } from 'react';
 import RetroWindow from './RetroWindow';
 import { storage } from '../utils/storage';
 import { sound } from '../utils/audio';
-import { Shield, Key, Database, RefreshCw, CheckCircle2, Copy } from 'lucide-react';
+import { Shield, Key, Database, RefreshCw, CheckCircle2, Copy, AlertCircle } from 'lucide-react';
 
 export default function AuthModal({ isOpen, onClose, user, onUpdateUser }) {
-  const [authMode, setAuthMode] = useState('profile'); // 'profile', 'login', 'supabase'
+  const [authMode, setAuthMode] = useState('profile'); // 'profile', 'login'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-
-  // Supabase config state
-  const currentConfig = storage.getSupabaseConfig();
-  const [supabaseUrl, setSupabaseUrl] = useState(currentConfig.url || '');
-  const [supabaseAnonKey, setSupabaseAnonKey] = useState(currentConfig.anonKey || '');
-  const [isSupabaseConnected, setIsSupabaseConnected] = useState(currentConfig.connected);
   const [copiedSql, setCopiedSql] = useState(false);
+
+  const supabaseEnv = storage.getSupabaseEnvStatus();
 
   if (!isOpen) return null;
 
@@ -36,7 +32,6 @@ export default function AuthModal({ isOpen, onClose, user, onUpdateUser }) {
 
   const handleGoogleOAuth = () => {
     sound.playClick();
-    // Simulate / Trigger Google OAuth
     const newUser = {
       id: 'google-usr-' + Math.random().toString(36).substr(2, 6),
       email: 'user.google@gmail.com',
@@ -48,17 +43,6 @@ export default function AuthModal({ isOpen, onClose, user, onUpdateUser }) {
     storage.setUser(newUser);
     onUpdateUser(newUser);
     setAuthMode('profile');
-  };
-
-  const handleSaveSupabase = (e) => {
-    e.preventDefault();
-    sound.playClick();
-    const success = storage.saveSupabaseConfig(supabaseUrl.trim(), supabaseAnonKey.trim());
-    setIsSupabaseConnected(success);
-    alert(success 
-      ? 'Supabase backend connected successfully! Real-time PostgreSQL sync is now active.'
-      : 'Supabase credentials cleared. Falling back to local offline & BroadcastChannel sync.'
-    );
   };
 
   const handleResetToDemo = () => {
@@ -130,12 +114,6 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks;
               >
                 LOGIN / SIGN UP
               </button>
-              <button
-                onClick={() => { sound.playClick(); setAuthMode('supabase'); }}
-                className={`flex-1 py-1.5 font-pixel text-[10px] ${authMode === 'supabase' ? 'bg-black text-white font-bold' : 'hover:bg-neutral-200'}`}
-              >
-                SUPABASE CONFIG
-              </button>
             </div>
 
             {/* TAB 1: PROFILE / ACTIVE STATUS */}
@@ -166,31 +144,66 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks;
                     </div>
                     <div>
                       <span className="text-neutral-500 block text-[10px]">SUPABASE BACKEND:</span>
-                      <span>{isSupabaseConnected ? '🟢 CONNECTED' : '⚪ LOCAL OFFLINE'}</span>
+                      <span className="font-bold">
+                        {supabaseEnv.connected 
+                          ? '🟢 CONNECTED (.env)' 
+                          : '⚪ LOCAL OFFLINE'}
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                <div className="border border-black p-2.5 bg-white space-y-1">
-                  <div className="font-pixel text-[10px] font-bold">MULTI-DEVICE SYNCHRONIZATION:</div>
-                  <p className="text-[11px] text-neutral-600">
-                    Open RetroCal in two separate browser tabs or mobile windows right now. Any task you create, edit, or check off will instantly synchronize in real time!
+                {/* Environment Variable Configuration Status Card */}
+                <div className="border border-black p-2.5 bg-white space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-pixel text-[10px] font-bold">ENV BACKEND STATUS (.env):</span>
+                    <span className={`px-1.5 py-0.5 text-[9px] font-pixel border border-black ${supabaseEnv.connected ? 'bg-black text-white' : 'bg-neutral-200 text-neutral-700'}`}>
+                      {supabaseEnv.connected ? 'ENV ACTIVE' : 'NO ENV KEYS'}
+                    </span>
+                  </div>
+                  
+                  <div className="text-[11px] space-y-1 text-neutral-700">
+                    <div className="flex items-center justify-between">
+                      <span>VITE_SUPABASE_URL:</span>
+                      <span className="font-mono">{supabaseEnv.hasUrl ? 'CONFIGURED' : 'NOT SET'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>VITE_SUPABASE_ANON_KEY:</span>
+                      <span className="font-mono">{supabaseEnv.hasKey ? 'CONFIGURED' : 'NOT SET'}</span>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-neutral-500 pt-1 border-t border-neutral-300">
+                    API keys are securely managed via your project's <code className="bg-neutral-100 px-1">.env</code> file instead of manual UI inputs.
                   </p>
                 </div>
 
-                <div className="flex items-center justify-between pt-2">
+                {/* SQL Schema Copy Button */}
+                <div className="flex items-center justify-between gap-2 pt-1">
                   <button
-                    onClick={handleResetToDemo}
-                    className="retro-btn px-2.5 py-1 text-[10px]"
+                    type="button"
+                    onClick={copySqlSchema}
+                    className="retro-btn px-2.5 py-1 text-[10px] flex items-center gap-1"
+                    title="Copy Supabase tasks table SQL"
                   >
-                    RESET DEMO TASKS
+                    <Copy className="w-3 h-3" />
+                    <span>{copiedSql ? 'SQL COPIED!' : 'COPY SQL SCHEMA'}</span>
                   </button>
-                  <button
-                    onClick={() => { sound.playClick(); setAuthMode('login'); }}
-                    className="retro-btn-black px-3 py-1 text-[10px]"
-                  >
-                    SWITCH ACCOUNT
-                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleResetToDemo}
+                      className="retro-btn px-2.5 py-1 text-[10px]"
+                    >
+                      RESET DEMO
+                    </button>
+                    <button
+                      onClick={() => { sound.playClick(); setAuthMode('login'); }}
+                      className="retro-btn-black px-3 py-1 text-[10px]"
+                    >
+                      SWITCH ACCOUNT
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -261,58 +274,6 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks;
                   </div>
                 </form>
               </div>
-            )}
-
-            {/* TAB 3: SUPABASE BACKEND LIVE CONNECTION */}
-            {authMode === 'supabase' && (
-              <form onSubmit={handleSaveSupabase} className="space-y-3">
-                <div className="border border-black p-2 bg-neutral-100 text-[11px]">
-                  <strong>Supabase Real-Time Backend API:</strong>
-                  <p className="mt-0.5 text-neutral-700">
-                    Connect your real Supabase PostgreSQL project to achieve seamless multi-device persistence across mobile phones and desktop computers.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block font-bold mb-0.5 text-[10px]">SUPABASE PROJECT URL:</label>
-                  <input
-                    type="url"
-                    value={supabaseUrl}
-                    onChange={(e) => setSupabaseUrl(e.target.value)}
-                    placeholder="https://xyzproject.supabase.co"
-                    className="w-full border-2 border-black p-1.5 bg-white shadow-[1px_1px_0px_#000]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold mb-0.5 text-[10px]">SUPABASE ANON (PUBLIC) KEY:</label>
-                  <input
-                    type="password"
-                    value={supabaseAnonKey}
-                    onChange={(e) => setSupabaseAnonKey(e.target.value)}
-                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
-                    className="w-full border-2 border-black p-1.5 bg-white shadow-[1px_1px_0px_#000]"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={copySqlSchema}
-                    className="retro-btn px-2.5 py-1 text-[10px] flex items-center gap-1"
-                  >
-                    <Copy className="w-3 h-3" />
-                    <span>{copiedSql ? 'SQL COPIED!' : 'COPY SQL SCHEMA'}</span>
-                  </button>
-
-                  <button
-                    type="submit"
-                    className="retro-btn-black px-4 py-1 text-xs"
-                  >
-                    SAVE & CONNECT
-                  </button>
-                </div>
-              </form>
             )}
 
           </div>

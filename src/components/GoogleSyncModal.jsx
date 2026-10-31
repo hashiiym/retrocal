@@ -2,15 +2,12 @@ import React, { useState } from 'react';
 import RetroWindow from './RetroWindow';
 import { googleCalendar } from '../utils/googleCalendar';
 import { sound } from '../utils/audio';
-import { Calendar, Upload, Key, CheckCircle, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Calendar, Upload, Key, CheckCircle, RefreshCw } from 'lucide-react';
 
 export default function GoogleSyncModal({ isOpen, onClose, onRefresh }) {
-  const config = googleCalendar.getConfig();
-  const [enabled, setEnabled] = useState(config.enabled);
-  const [clientId, setClientId] = useState(config.clientId || '');
-  const [apiKey, setApiKey] = useState(config.apiKey || '');
-  const [icsInput, setIcsInput] = useState('');
+  const [enabled, setEnabled] = useState(googleCalendar.enabled);
   const [importStatus, setImportStatus] = useState('');
+  const envStatus = googleCalendar.getEnvStatus();
 
   if (!isOpen) return null;
 
@@ -29,31 +26,10 @@ export default function GoogleSyncModal({ isOpen, onClose, onRefresh }) {
     if (onRefresh) onRefresh();
   };
 
-  const handleImportIcs = (e) => {
-    e.preventDefault();
-    if (!icsInput.trim()) return;
-    sound.playAdd();
-    const count = googleCalendar.importICS(icsInput);
-    if (count > 0) {
-      setImportStatus(`Successfully imported ${count} events from iCal data!`);
-      setIcsInput('');
-      if (onRefresh) onRefresh();
-    } else {
-      setImportStatus('Could not find valid VEVENT records in provided iCal string.');
-    }
-  };
-
-  const handleSaveApiKeys = (e) => {
-    e.preventDefault();
-    sound.playClick();
-    googleCalendar.saveConfig({ clientId: clientId.trim(), apiKey: apiKey.trim(), connected: true });
-    setImportStatus('Google Cloud API configuration saved.');
-    if (onRefresh) onRefresh();
-  };
-
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    sound.playAdd();
     const reader = new FileReader();
     reader.onload = (evt) => {
       const content = evt.target?.result;
@@ -103,7 +79,7 @@ export default function GoogleSyncModal({ isOpen, onClose, onRefresh }) {
             {/* Option 1: Instant Demo Data */}
             <div className="border border-black p-3 bg-white space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-pixel text-[10px] font-bold">1. INSTANT DEMO EVENTS</span>
+                <span className="font-pixel text-[10px] font-bold">1. SAMPLE CALENDAR EVENTS</span>
                 <button
                   onClick={handleLoadDemo}
                   className="retro-btn px-2 py-0.5 text-[10px]"
@@ -134,48 +110,34 @@ export default function GoogleSyncModal({ isOpen, onClose, onRefresh }) {
                     className="hidden"
                   />
                 </label>
-                <span className="text-[10px] text-neutral-500">Supports all standard iCal exports</span>
+                <span className="text-[10px] text-neutral-500">Supports standard iCal (.ics) exports</span>
               </div>
             </div>
 
-            {/* Option 3: Live Google Cloud OAuth API Key */}
-            <form onSubmit={handleSaveApiKeys} className="border border-black p-3 bg-white space-y-2">
+            {/* Option 3: Environment Variable Status (Replaces manual key inputs) */}
+            <div className="border border-black p-3 bg-neutral-50 space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="font-pixel text-[10px] font-bold">3. LIVE GOOGLE CALENDAR REST API V3</span>
-                <span className="text-[9px] bg-neutral-200 px-1 border border-black">OAUTH 2.0</span>
+                <span className="font-pixel text-[10px] font-bold">3. GOOGLE API ENVIRONMENT STATUS (.env)</span>
+                <span className={`px-1.5 py-0.5 text-[9px] font-pixel border border-black ${envStatus.connected ? 'bg-black text-white' : 'bg-neutral-200 text-neutral-700'}`}>
+                  {envStatus.connected ? 'ENV ACTIVE' : 'NO ENV KEYS'}
+                </span>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold mb-0.5">GOOGLE OAUTH CLIENT ID:</label>
-                <input
-                  type="text"
-                  value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
-                  placeholder="xxxx.apps.googleusercontent.com"
-                  className="w-full border border-black p-1 text-xs bg-white"
-                />
+              <div className="text-[11px] space-y-1 text-neutral-700">
+                <div className="flex items-center justify-between">
+                  <span>VITE_GOOGLE_CLIENT_ID:</span>
+                  <span className="font-mono">{envStatus.hasClientId ? 'CONFIGURED' : 'NOT SET'}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>VITE_GOOGLE_API_KEY:</span>
+                  <span className="font-mono">{envStatus.hasApiKey ? 'CONFIGURED' : 'NOT SET'}</span>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold mb-0.5">GOOGLE API KEY (CALENDAR V3):</label>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="AIzaSy..."
-                  className="w-full border border-black p-1 text-xs bg-white"
-                />
-              </div>
-
-              <div className="pt-1 flex justify-end">
-                <button
-                  type="submit"
-                  className="retro-btn-black px-3 py-1 text-xs"
-                >
-                  SAVE GCP CREDENTIALS
-                </button>
-              </div>
-            </form>
+              <p className="text-[10px] text-neutral-500 pt-1 border-t border-neutral-300">
+                Google Calendar credentials are now initialized via environment variables. Set them in your <code className="bg-neutral-100 px-1">.env</code> file.
+              </p>
+            </div>
 
             <div className="pt-1 flex justify-end">
               <button

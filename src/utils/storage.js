@@ -2,8 +2,11 @@
 import { createClient } from '@supabase/supabase-js';
 
 const STORAGE_KEY = 'retrocal_tasks_v1';
-const SUPABASE_CONFIG_KEY = 'retrocal_supabase_config';
 const USER_KEY = 'retrocal_auth_user';
+
+// Read Supabase credentials from Vite environment variables
+const SUPABASE_ENV_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ENV_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // BroadcastChannel for instant real-time synchronization across browser tabs/windows
 const syncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window 
@@ -106,20 +109,30 @@ export class StorageManager {
     }
   }
 
-  // Supabase client initialization
+  // Supabase client initialization using Vite environment variables
   initSupabase() {
     try {
-      const configStr = localStorage.getItem(SUPABASE_CONFIG_KEY);
-      if (configStr) {
-        const { url, anonKey } = JSON.parse(configStr);
-        if (url && anonKey) {
-          this.supabase = createClient(url, anonKey);
-          this.setupSupabaseSubscription();
-        }
+      if (SUPABASE_ENV_URL && SUPABASE_ENV_ANON_KEY) {
+        this.supabase = createClient(SUPABASE_ENV_URL, SUPABASE_ENV_ANON_KEY);
+        this.setupSupabaseSubscription();
+        this.fetchFromSupabase();
       }
     } catch (e) {
-      console.warn('Supabase init error:', e);
+      console.warn('Supabase env init error:', e);
     }
+  }
+
+  isSupabaseConfigured() {
+    return Boolean(SUPABASE_ENV_URL && SUPABASE_ENV_ANON_KEY && this.supabase);
+  }
+
+  getSupabaseEnvStatus() {
+    return {
+      hasUrl: Boolean(SUPABASE_ENV_URL),
+      hasKey: Boolean(SUPABASE_ENV_ANON_KEY),
+      connected: this.isSupabaseConfigured(),
+      url: SUPABASE_ENV_URL ? SUPABASE_ENV_URL.substring(0, 20) + '...' : null,
+    };
   }
 
   setupSupabaseSubscription() {
@@ -128,35 +141,12 @@ export class StorageManager {
       this.supabase
         .channel('public:tasks')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
-          console.log('Realtime change received from Supabase:', payload);
-          // Sync with local
           this.fetchFromSupabase();
         })
         .subscribe();
     } catch (e) {
       console.warn('Realtime subscription error:', e);
     }
-  }
-
-  getSupabaseConfig() {
-    try {
-      const val = localStorage.getItem(SUPABASE_CONFIG_KEY);
-      return val ? JSON.parse(val) : { url: '', anonKey: '', connected: false };
-    } catch {
-      return { url: '', anonKey: '', connected: false };
-    }
-  }
-
-  saveSupabaseConfig(url, anonKey) {
-    if (!url || !anonKey) {
-      localStorage.removeItem(SUPABASE_CONFIG_KEY);
-      this.supabase = null;
-      return false;
-    }
-    localStorage.setItem(SUPABASE_CONFIG_KEY, JSON.stringify({ url, anonKey, connected: true }));
-    this.supabase = createClient(url, anonKey);
-    this.setupSupabaseSubscription();
-    return true;
   }
 
   async fetchFromSupabase() {
@@ -168,7 +158,7 @@ export class StorageManager {
         .order('createdAt', { ascending: false });
 
       if (error) throw error;
-      if (data) {
+      if (data && data.length > 0) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         this.notifyListeners(data, true);
         return data;
@@ -198,7 +188,7 @@ export class StorageManager {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
       this.notifyListeners(tasks, true);
 
-      // Async sync to Supabase if connected
+      // Async sync to Supabase if configured
       if (this.supabase) {
         this.syncAllToSupabase(tasks);
       }
@@ -210,7 +200,6 @@ export class StorageManager {
   async syncAllToSupabase(tasks) {
     if (!this.supabase) return;
     try {
-      // Upsert tasks
       const { error } = await this.supabase.from('tasks').upsert(tasks);
       if (error) console.warn('Supabase sync error:', error);
     } catch (e) {
@@ -229,6 +218,24 @@ export class StorageManager {
     const updated = [newTask, ...current];
     this.saveTasks(updated);
     return newTask;
+  }
+
+  // Batch append tasks (e.g. from CSV import)
+  addTasks(newTasksArray) {
+    if (!Array.isArray(newTasksArray) || newTasksArray.length === 0) return [];
+    const current = this.getTasks();
+    const formatted = newTasksArray.map((t, idx) => ({
+      ...t,
+      id: t.id || ('task-' + Date.now() + '-' + idx + '-' + Math.random().toString(36).substr(2, 4)),
+      createdAt: t.createdAt || (Date.now() + idx),
+      completed: Boolean(t.completed),
+      tag: t.tag || 'CSV',
+      reminder: t.reminder || '15m',
+      notes: t.notes || '',
+    }));
+    const updated = [...formatted, ...current];
+    this.saveTasks(updated);
+    return formatted;
   }
 
   updateTask(id, updates) {

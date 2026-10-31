@@ -84,6 +84,10 @@ export default function App() {
     storage.clearCompleted();
   };
 
+  const handleImportTasks = (newTasks) => {
+    storage.addTasks(newTasks);
+  };
+
   const handleOpenEditTask = (task) => {
     setEditingTask(task);
     setIsTaskModalOpen(true);
@@ -195,6 +199,7 @@ export default function App() {
                 <TaskDesk
                   tasks={tasks}
                   onAddTask={handleAddTask}
+                  onImportTasks={handleImportTasks}
                   onUpdateTask={handleUpdateTask}
                   onDeleteTask={handleDeleteTask}
                   onClearCompleted={handleClearCompleted}

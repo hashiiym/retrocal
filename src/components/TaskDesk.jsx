@@ -1,12 +1,14 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
   Plus, Check, Trash2, Edit3, Calendar as CalendarIcon, 
-  Clock, Tag, AlertCircle, Filter, Search, Download, CheckSquare, Square
+  Clock, Tag, AlertCircle, Filter, Search, Download, 
+  CheckSquare, Square, FileUp, CheckCircle2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { sound } from '../utils/audio';
+import { storage } from '../utils/storage';
 
-const TAG_OPTIONS = ['WORK', 'DEV', 'LIFE', 'HEALTH', 'RETRO', 'URGENT'];
+const TAG_OPTIONS = ['WORK', 'DEV', 'LIFE', 'HEALTH', 'RETRO', 'URGENT', 'CSV'];
 const PRIORITY_OPTIONS = [
   { value: 'LOW', label: '[!] LOW', color: 'bg-neutral-100 text-neutral-800' },
   { value: 'MEDIUM', label: '[!!] MED', color: 'bg-neutral-200 text-black font-bold' },
@@ -16,6 +18,7 @@ const PRIORITY_OPTIONS = [
 export default function TaskDesk({
   tasks,
   onAddTask,
+  onImportTasks,
   onUpdateTask,
   onDeleteTask,
   onClearCompleted,
@@ -36,6 +39,10 @@ export default function TaskDesk({
   const [activeTab, setActiveTab] = useState('ALL'); // ALL, TODAY, UPCOMING, OVERDUE, DONE
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState('ALL');
+  const [csvStatusMessage, setCsvStatusMessage] = useState('');
+
+  // Hidden file input reference for CSV import
+  const fileInputRef = useRef(null);
 
   // Sync date when parent changes selectedDate
   React.useEffect(() => {
@@ -63,12 +70,114 @@ export default function TaskDesk({
     setNewTitle('');
   };
 
+  // CSV Import: Trigger hidden file input
+  const handleTriggerCsvInput = () => {
+    sound.playClick();
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  // CSV Parsing Logic via FileReader
+  // Expected format: Description,Date,Time,Priority
+  const handleCsvUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result;
+        if (!text || typeof text !== 'string') return;
+
+        const lines = text.split(/\r\n|\n|\r/).map(line => line.trim()).filter(Boolean);
+        if (lines.length === 0) {
+          setCsvStatusMessage('CSV file is empty.');
+          return;
+        }
+
+        const todayStr = new Date().toISOString().split('T')[0];
+        const newTasks = [];
+
+        lines.forEach((line, index) => {
+          // Parse CSV columns, trimming surrounding whitespace and quotes
+          const columns = line.split(',').map(col => col.trim().replace(/^["']|["']$/g, ''));
+          if (columns.length === 0 || !columns[0]) return;
+
+          // Skip header row if Description / Title is present
+          if (index === 0 && (
+            columns[0].toLowerCase().includes('description') ||
+            columns[0].toLowerCase().includes('title') ||
+            columns[0].toLowerCase().includes('task')
+          )) {
+            return;
+          }
+
+          const description = columns[0];
+          let date = columns[1] || todayStr;
+          // Validate date format YYYY-MM-DD
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+            const parsed = new Date(date);
+            date = !isNaN(parsed.getTime()) ? parsed.toISOString().split('T')[0] : todayStr;
+          }
+
+          let time = columns[2] || '10:00';
+          if (!/^\d{1,2}:\d{2}$/.test(time)) {
+            time = '10:00';
+          }
+          if (time.length === 4) time = '0' + time;
+
+          let rawPriority = (columns[3] || 'MEDIUM').toUpperCase();
+          let priority = 'MEDIUM';
+          if (rawPriority.includes('HIGH') || rawPriority.includes('1') || rawPriority.includes('!')) {
+            priority = 'HIGH';
+          } else if (rawPriority.includes('LOW') || rawPriority.includes('3')) {
+            priority = 'LOW';
+          }
+
+          // Map the parsed rows into new task objects with default 'pending' (completed: false)
+          newTasks.push({
+            id: 'task-csv-' + Date.now() + '-' + index + '-' + Math.random().toString(36).substr(2, 4),
+            title: description,
+            date,
+            time,
+            priority,
+            completed: false, // Default 'pending' status
+            tag: 'CSV',
+            notes: 'Imported from CSV',
+            reminder: '15m',
+            createdAt: Date.now() + index,
+          });
+        });
+
+        if (newTasks.length > 0) {
+          sound.playAdd();
+          // Append to existing tasks state and Supabase database
+          if (onImportTasks) {
+            onImportTasks(newTasks);
+          } else {
+            storage.addTasks(newTasks);
+          }
+          setCsvStatusMessage(`SUCCESS: Imported ${newTasks.length} pending tasks from "${file.name}"!`);
+          setTimeout(() => setCsvStatusMessage(''), 5000);
+        } else {
+          setCsvStatusMessage('No valid task rows could be parsed from the CSV file.');
+        }
+      } catch (err) {
+        console.error('CSV parse error:', err);
+        setCsvStatusMessage('Error parsing CSV file format.');
+      }
+    };
+
+    reader.readAsText(file);
+  };
+
   // Toggle Complete
   const handleToggle = (task) => {
     const nextCompleted = !task.completed;
     if (nextCompleted) {
       sound.playComplete();
-      // Check if all tasks completed for celebration
       const pendingOthers = tasks.filter(t => t.id !== task.id && !t.completed);
       if (pendingOthers.length === 0) {
         confetti({
@@ -146,17 +255,45 @@ export default function TaskDesk({
   return (
     <div className="space-y-4 font-mono">
       
+      {/* Hidden File Input for CSV Upload */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv"
+        onChange={handleCsvUpload}
+        className="hidden"
+      />
+
+      {/* CSV Status Feedback Banner */}
+      {csvStatusMessage && (
+        <div className="p-2 border-2 border-black bg-neutral-100 text-xs font-mono font-bold flex items-center gap-2 shadow-[2px_2px_0px_#000]">
+          <CheckCircle2 className="w-4 h-4 text-black flex-shrink-0" />
+          <span>{csvStatusMessage}</span>
+        </div>
+      )}
+
       {/* Quick Add Section */}
       <form onSubmit={handleCreate} className="retro-box-sm p-3 bg-white space-y-2">
         <div className="text-[11px] font-pixel font-bold flex items-center justify-between border-b border-black pb-1">
           <span>&gt; QUICK-ADD TASK COMMAND</span>
-          <button
-            type="button"
-            onClick={() => { sound.playClick(); setIsExpandedAdd(!isExpandedAdd); }}
-            className="text-[10px] underline hover:bg-black hover:text-white px-1"
-          >
-            {isExpandedAdd ? '[- SIMPLE]' : '[+ MORE OPTIONS]'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleTriggerCsvInput}
+              className="retro-btn px-2 py-0.5 text-[9px] font-pixel"
+              title="Import tasks from a CSV file"
+            >
+              <FileUp className="w-2.5 h-2.5" />
+              <span>[+] IMPORT CSV</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { sound.playClick(); setIsExpandedAdd(!isExpandedAdd); }}
+              className="text-[10px] underline hover:bg-black hover:text-white px-1"
+            >
+              {isExpandedAdd ? '[- SIMPLE]' : '[+ MORE OPTIONS]'}
+            </button>
+          </div>
         </div>
 
         {/* Title Input + Add button */}
@@ -339,7 +476,7 @@ export default function TaskDesk({
           <div className="p-8 text-center text-neutral-500 font-mono text-xs space-y-2">
             <div className="font-pixel text-sm">[ NO TASKS FOUND ]</div>
             <p>No chores or tasks match the active filters.</p>
-            <p className="text-[10px] text-neutral-400">Use the quick-add command bar above to create a new task.</p>
+            <p className="text-[10px] text-neutral-400">Use the quick-add bar above or import tasks via CSV.</p>
           </div>
         ) : (
           filteredTasks.map((task) => {
@@ -457,7 +594,18 @@ export default function TaskDesk({
           )}
         </div>
 
+        {/* CSV Import & Export Actions */}
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleTriggerCsvInput}
+            className="retro-btn px-2.5 py-1 text-[11px] font-pixel flex items-center gap-1 shadow-[1px_1px_0px_#000]"
+            title="Import tasks from a CSV file (Description,Date,Time,Priority)"
+          >
+            <FileUp className="w-3 h-3" />
+            <span>[+] IMPORT CSV</span>
+          </button>
+
           <button
             onClick={handleExportJSON}
             className="px-2 py-1 border border-black bg-white hover:bg-black hover:text-white text-[11px] font-mono flex items-center gap-1 shadow-[1px_1px_0px_#000]"

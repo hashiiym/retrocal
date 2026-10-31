@@ -1,7 +1,12 @@
 // Google Calendar API integration & mock calendar sync provider
+// Initialized using Vite environment variables (VITE_GOOGLE_CLIENT_ID, VITE_GOOGLE_API_KEY)
 
-const GCAL_CONFIG_KEY = 'retrocal_gcal_config';
+const GCAL_PREF_KEY = 'retrocal_gcal_pref';
 const GCAL_EVENTS_KEY = 'retrocal_gcal_events';
+
+// Read Google credentials from Vite environment variables
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
 
 // Default sample Google Calendar events for instant out-of-the-box demonstration
 const generateSampleGoogleEvents = () => {
@@ -68,7 +73,9 @@ const generateSampleGoogleEvents = () => {
 class GoogleCalendarManager {
   constructor() {
     this.listeners = new Set();
-    this.connected = false;
+    this.clientId = GOOGLE_CLIENT_ID || '';
+    this.apiKey = GOOGLE_API_KEY || '';
+    this.connected = Boolean(GOOGLE_CLIENT_ID || GOOGLE_API_KEY);
     this.enabled = true;
     this.events = [];
     this.init();
@@ -76,16 +83,10 @@ class GoogleCalendarManager {
 
   init() {
     try {
-      const config = localStorage.getItem(GCAL_CONFIG_KEY);
-      if (config) {
-        const parsed = JSON.parse(config);
-        this.connected = !!parsed.connected;
+      const pref = localStorage.getItem(GCAL_PREF_KEY);
+      if (pref) {
+        const parsed = JSON.parse(pref);
         this.enabled = parsed.enabled !== false;
-      } else {
-        // Pre-enable demo connection by default so user sees unified calendar immediately!
-        this.connected = true;
-        this.enabled = true;
-        this.saveConfig({ connected: true, enabled: true, useDemo: true });
       }
 
       const savedEvts = localStorage.getItem(GCAL_EVENTS_KEY);
@@ -109,22 +110,28 @@ class GoogleCalendarManager {
     this.listeners.forEach(cb => cb(this.getEvents()));
   }
 
-  getConfig() {
-    try {
-      const config = localStorage.getItem(GCAL_CONFIG_KEY);
-      return config ? JSON.parse(config) : { connected: true, enabled: true, useDemo: true, clientId: '', apiKey: '' };
-    } catch {
-      return { connected: true, enabled: true, useDemo: true, clientId: '', apiKey: '' };
-    }
+  isGoogleConfigured() {
+    return Boolean(GOOGLE_CLIENT_ID || GOOGLE_API_KEY);
   }
 
-  saveConfig(updates) {
-    const current = this.getConfig();
-    const merged = { ...current, ...updates };
-    localStorage.setItem(GCAL_CONFIG_KEY, JSON.stringify(merged));
-    this.connected = merged.connected;
-    this.enabled = merged.enabled;
-    this.notify();
+  getEnvStatus() {
+    return {
+      hasClientId: Boolean(GOOGLE_CLIENT_ID),
+      hasApiKey: Boolean(GOOGLE_API_KEY),
+      clientIdPreview: GOOGLE_CLIENT_ID ? GOOGLE_CLIENT_ID.substring(0, 15) + '...' : null,
+      apiKeyPreview: GOOGLE_API_KEY ? GOOGLE_API_KEY.substring(0, 8) + '...' : null,
+      connected: this.isGoogleConfigured(),
+    };
+  }
+
+  savePref(updates) {
+    try {
+      const current = { enabled: this.enabled };
+      const merged = { ...current, ...updates };
+      localStorage.setItem(GCAL_PREF_KEY, JSON.stringify(merged));
+      this.enabled = merged.enabled;
+      this.notify();
+    } catch {}
   }
 
   getEvents() {
@@ -133,11 +140,11 @@ class GoogleCalendarManager {
   }
 
   toggleEnabled() {
-    this.saveConfig({ enabled: !this.enabled });
+    this.savePref({ enabled: !this.enabled });
   }
 
   disconnect() {
-    this.saveConfig({ connected: false, enabled: false });
+    this.savePref({ enabled: false });
     this.events = [];
     localStorage.removeItem(GCAL_EVENTS_KEY);
     this.notify();
@@ -146,7 +153,7 @@ class GoogleCalendarManager {
   connectDemoEvents() {
     this.events = generateSampleGoogleEvents();
     localStorage.setItem(GCAL_EVENTS_KEY, JSON.stringify(this.events));
-    this.saveConfig({ connected: true, enabled: true, useDemo: true });
+    this.savePref({ enabled: true });
     this.notify();
   }
 
@@ -209,7 +216,7 @@ class GoogleCalendarManager {
       if (events.length > 0) {
         this.events = [...events, ...this.events];
         localStorage.setItem(GCAL_EVENTS_KEY, JSON.stringify(this.events));
-        this.saveConfig({ connected: true, enabled: true });
+        this.savePref({ enabled: true });
         this.notify();
         return events.length;
       }
@@ -222,18 +229,18 @@ class GoogleCalendarManager {
 
   // Live Google Calendar API v3 fetch via access token
   async fetchLiveGoogleCalendarEvents(accessToken) {
-    if (!accessToken) return false;
+    if (!accessToken && !this.apiKey) return false;
     try {
       const timeMin = new Date(Date.now() - 30 * 86400000).toISOString();
       const timeMax = new Date(Date.now() + 60 * 86400000).toISOString();
-      const res = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
+      const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime${this.apiKey ? `&key=${this.apiKey}` : ''}`;
+      
+      const headers = {};
+      if (accessToken) {
+        headers.Authorization = `Bearer ${accessToken}`;
+      }
+
+      const res = await fetch(url, { headers });
       if (!res.ok) throw new Error('Google Calendar API returned error ' + res.status);
       const data = await res.json();
       const parsedEvents = (data.items || []).map(item => {
@@ -264,7 +271,7 @@ class GoogleCalendarManager {
 
       this.events = parsedEvents;
       localStorage.setItem(GCAL_EVENTS_KEY, JSON.stringify(this.events));
-      this.saveConfig({ connected: true, enabled: true, useDemo: false });
+      this.savePref({ enabled: true });
       this.notify();
       return true;
     } catch (e) {
