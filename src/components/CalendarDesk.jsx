@@ -10,6 +10,13 @@ import {
 } from 'date-fns';
 import { sound } from '../utils/audio';
 
+// Priority weights for sorting: HIGH > MEDIUM > LOW
+export const PRIORITY_WEIGHTS = {
+  HIGH: 3,
+  MEDIUM: 2,
+  LOW: 1,
+};
+
 export default function CalendarDesk({
   tasks,
   googleEvents = [],
@@ -85,8 +92,25 @@ export default function CalendarDesk({
   };
 
   // Combine tasks & Google Events for a specific date string
+  // Sort that day's tasks by priority descending (HIGH > MEDIUM > LOW, using { HIGH: 3, MEDIUM: 2, LOW: 1 }) then time ascending
   const getItemsForDate = (dateStr) => {
-    const dayTasks = tasks.filter(t => t.date === dateStr).map(t => ({ ...t, isTask: true }));
+    const dayTasks = tasks
+      .filter(t => t.date === dateStr)
+      .map(t => ({ ...t, isTask: true }))
+      .sort((a, b) => {
+        // 1. Primary Sort: Priority descending (HIGH > MEDIUM > LOW)
+        const weightA = PRIORITY_WEIGHTS[(a.priority || '').toUpperCase()] || 0;
+        const weightB = PRIORITY_WEIGHTS[(b.priority || '').toUpperCase()] || 0;
+        if (weightA !== weightB) {
+          return weightB - weightA;
+        }
+
+        // 2. Secondary Sort: Time ascending when priorities match
+        const timeA = a.time || '00:00';
+        const timeB = b.time || '00:00';
+        return timeA.localeCompare(timeB);
+      });
+
     const dayGCal = googleEvents.filter(e => e.date === dateStr).map(e => ({ ...e, isGCal: true }));
     return [...dayTasks, ...dayGCal];
   };
@@ -261,23 +285,29 @@ export default function CalendarDesk({
 
                   {/* Preview Items */}
                   <div className="space-y-0.5 mt-1 overflow-hidden flex-1">
-                    {items.slice(0, 2).map((item, i) => (
-                      <div
-                        key={i}
-                        className={`text-[9px] sm:text-[10px] truncate px-1 border border-black font-mono leading-tight ${
-                          item.isGCal 
-                            ? 'bg-neutral-100 italic border-dashed' 
-                            : item.completed 
-                            ? 'line-through text-neutral-400 bg-white' 
-                            : 'bg-white font-medium'
-                        }`}
-                        title={item.title}
-                      >
-                        {item.isGCal ? `[G] ${item.title}` : `• ${item.title}`}
-                      </div>
-                    ))}
+                    {items.slice(0, 2).map((item, i) => {
+                      const isHighPriority = (item.priority || '').toUpperCase() === 'HIGH';
+
+                      return (
+                        <div
+                          key={i}
+                          className={`text-[9px] sm:text-[10px] truncate px-1 border font-mono leading-tight ${
+                            item.isGCal 
+                              ? 'bg-neutral-100 italic border-dashed border-black text-black' 
+                              : item.completed 
+                              ? 'line-through text-neutral-400 bg-white border-neutral-300' 
+                              : isHighPriority
+                              ? 'bg-black text-white font-bold border-2 border-black shadow-[1px_1px_0px_#000]'
+                              : 'bg-white font-medium border-black text-black'
+                          }`}
+                          title={item.title}
+                        >
+                          {item.isGCal ? `[G] ${item.title}` : isHighPriority ? `! ${item.title}` : `• ${item.title}`}
+                        </div>
+                      );
+                    })}
                     {items.length > 2 && (
-                      <div className="text-[9px] font-mono text-neutral-600 pl-1">
+                      <div className="text-[9px] font-mono text-neutral-600 pl-1 font-bold">
                         +{items.length - 2} more...
                       </div>
                     )}
