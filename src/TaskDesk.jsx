@@ -23,7 +23,7 @@ const PRIORITY_ORDER = {
 };
 
 export default function TaskDesk({
-  tasks,
+  tasks: initialTasks = [],
   onAddTask,
   onImportTasks,
   onUpdateTask,
@@ -36,6 +36,13 @@ export default function TaskDesk({
   currentFilter,
   onSelectFilter,
 }) {
+  // Local tasks state initialized from prop and synchronized
+  const [tasks, setTasks] = useState(initialTasks || []);
+
+  useEffect(() => {
+    setTasks(initialTasks || []);
+  }, [initialTasks]);
+
   // Quick-Add Form state
   const [newTitle, setNewTitle] = useState('');
   const [newDate, setNewDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -352,6 +359,55 @@ export default function TaskDesk({
     setTimeout(() => setCsvStatusMessage(''), 5000);
   };
 
+  // Wipe Data: Delete all tasks for current user from Supabase and clear local tasks state
+  const handleWipeTasks = async () => {
+    const confirmed = window.confirm('Are you sure you want to wipe all tasks? This action cannot be undone.');
+    if (!confirmed) return;
+
+    sound.playDelete();
+
+    // Fetch the current authenticated user's session
+    let userId = authUser?.id;
+    if (supabase && !userId) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        userId = session?.user?.id;
+      } catch (err) {
+        console.warn('Error fetching session in handleWipeTasks:', err);
+      }
+    }
+
+    // Delete all tasks where user_id matches the current user
+    if (supabase && userId) {
+      try {
+        const { error } = await supabase
+          .from('tasks')
+          .delete()
+          .eq('user_id', userId);
+
+        if (error) {
+          console.error('Supabase wipe tasks error:', error);
+          alert('Failed to wipe tasks from database: ' + error.message);
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to wipe tasks from Supabase:', err);
+        alert('Failed to wipe tasks from database.');
+        return;
+      }
+    }
+
+    // Update local tasks state to an empty array upon success
+    setTasks([]);
+    storage.saveTasks([]);
+    if (onImportTasks) {
+      onImportTasks([]);
+    }
+
+    setCsvStatusMessage('SUCCESS: All tasks have been wiped.');
+    setTimeout(() => setCsvStatusMessage(''), 5000);
+  };
+
   // Toggle Complete
   const handleToggle = async (task) => {
     const nextCompleted = !task.completed;
@@ -520,6 +576,14 @@ export default function TaskDesk({
             >
               <FileUp className="w-3 h-3" />
               <span>[+] IMPORT CSV</span>
+            </button>
+            <button
+              onClick={handleWipeTasks}
+              className="px-2 py-0.5 border border-black text-[10px] font-pixel bg-white hover:bg-black hover:text-white flex items-center gap-1 shadow-[1px_1px_0px_#000]"
+              title="Wipe all tasks for current user"
+            >
+              <Trash2 className="w-3 h-3" />
+              <span>[X] WIPE DATA</span>
             </button>
             <button
               onClick={() => setShowAdvancedAdd(!showAdvancedAdd)}
@@ -832,6 +896,14 @@ export default function TaskDesk({
           >
             <FileUp className="w-3 h-3" />
             <span>[+] IMPORT CSV</span>
+          </button>
+          <button
+            onClick={handleWipeTasks}
+            className="px-2 py-1 border border-black bg-white hover:bg-black hover:text-white font-pixel text-[10px] flex items-center gap-1"
+            title="Wipe all tasks for current user"
+          >
+            <Trash2 className="w-3 h-3" />
+            <span>[X] WIPE DATA</span>
           </button>
           <button
             onClick={handleExportJson}
