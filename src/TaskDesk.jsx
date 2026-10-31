@@ -33,7 +33,7 @@ export default function TaskDesk({
   onOpenEdit,
   selectedCategory,
   onSelectCategory,
-  currentFilter,
+  currentFilter: propCurrentFilter,
   onSelectFilter,
 }) {
   // Local tasks state initialized from prop and synchronized
@@ -54,7 +54,25 @@ export default function TaskDesk({
 
   // Search & Filtering state
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTag, setActiveTag] = useState('ALL');
+  // Current filter state for tag filtering (e.g. 'ALL', 'WORK', 'HEALTH')
+  const [currentFilter, setCurrentFilter] = useState(propCurrentFilter || selectedCategory || 'ALL');
+
+  useEffect(() => {
+    if (propCurrentFilter !== undefined) {
+      setCurrentFilter(propCurrentFilter);
+    } else if (selectedCategory !== undefined) {
+      setCurrentFilter(selectedCategory);
+    }
+  }, [propCurrentFilter, selectedCategory]);
+
+  // Backward compatibility alias: activeTag references currentFilter
+  const activeTag = currentFilter;
+  const setActiveTag = (tag) => {
+    setCurrentFilter(tag);
+    if (onSelectFilter) onSelectFilter(tag);
+    if (onSelectCategory) onSelectCategory(tag);
+  };
+
   const [viewFilter, setViewFilter] = useState('all'); // 'all', 'today', 'upcoming', 'overdue'
   
   // Realtime Supabase Auth state for RLS user_id filtering
@@ -68,12 +86,58 @@ export default function TaskDesk({
 
   // Dynamic tags computed from preset options and all existing task custom tags
   const allAvailableTags = useMemo(() => {
-    const customTags = tasks.map(t => t.tag?.toUpperCase()).filter(Boolean);
+    const customTags = tasks.map(t => (t.tag || '').toUpperCase().replace(/^#/, '')).filter(Boolean);
     return Array.from(new Set([...TAG_OPTIONS, ...customTags]));
   }, [tasks]);
 
-  // Monitor Supabase session and fetch user-specific tasks on auth load
+  // fetchTasks loads data from Supabase on mount and maps tag and title columns correctly into local state
+  const fetchTasks = async (userId) => {
+    if (!supabase) return;
+    try {
+      let uid = userId || authUser?.id;
+      if (!uid) {
+        const { data: { session } } = await supabase.auth.getSession();
+        uid = session?.user?.id;
+      }
+
+      let query = supabase.from('tasks').select('*');
+      if (uid) {
+        query = query.eq('user_id', uid);
+      }
+
+      const { data, error } = await query.order('createdAt', { ascending: false });
+
+      if (error) {
+        console.error('Supabase fetch tasks error:', error);
+        return;
+      }
+
+      if (data) {
+        // Map database columns correctly into local state, specifically tag and title
+        const mappedTasks = data.map((item) => ({
+          ...item,
+          title: item.title,
+          tag: item.tag || 'WORK',
+        }));
+
+        setTasks(mappedTasks);
+
+        if (onImportTasks) {
+          onImportTasks(mappedTasks);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch tasks from Supabase:', err);
+    }
+  };
+
+  // Backward compatibility alias for fetchUserTasks
+  const fetchUserTasks = fetchTasks;
+
+  // useEffect that loads data from Supabase on mount
   useEffect(() => {
+    fetchTasks();
+
     if (!supabase) return;
 
     // 1. Fetch current active session
@@ -81,7 +145,7 @@ export default function TaskDesk({
       const currentUser = session?.user || null;
       setAuthUser(currentUser);
       if (currentUser?.id) {
-        fetchUserTasks(currentUser.id);
+        fetchTasks(currentUser.id);
       }
     });
 
@@ -90,7 +154,7 @@ export default function TaskDesk({
       const currentUser = session?.user || null;
       setAuthUser(currentUser);
       if (currentUser?.id) {
-        fetchUserTasks(currentUser.id);
+        fetchTasks(currentUser.id);
       }
     });
 
@@ -98,29 +162,6 @@ export default function TaskDesk({
       subscription?.unsubscribe();
     };
   }, []);
-
-  // Fetch only the authenticated user's tasks using .eq('user_id', user.id)
-  const fetchUserTasks = async (userId) => {
-    if (!supabase || !userId) return;
-    try {
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('user_id', userId)
-        .order('createdAt', { ascending: false });
-
-      if (error) {
-        console.error('Supabase fetch tasks error:', error);
-        return;
-      }
-
-      if (data && onImportTasks) {
-        onImportTasks(data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch user tasks from Supabase:', err);
-    }
-  };
 
   // Quick Add Task Form Submit Handler
   const handleQuickAdd = async (e) => {
@@ -220,7 +261,7 @@ export default function TaskDesk({
         }
 
         // Custom given category from Quick-Add bar if CSV row has no category
-        const customFallbackCategory = (newTag && newTag.trim() ? newTag.trim() : (activeTag !== 'ALL' ? activeTag : 'WORK')).replace(/^#/, '').toUpperCase();
+        const customFallbackCategory = (newTag && newTag.trim() ? newTag.trim() : (currentFilter !== 'ALL' ? currentFilter : 'WORK')).replace(/^#/, '').toUpperCase();
 
         lines.forEach((line, index) => {
           // Destructure 5 variables from the CSV row: [description, date, time, priority, category]
@@ -330,12 +371,12 @@ export default function TaskDesk({
     const cleanTag = targetTag.trim().replace(/^#/, '').toUpperCase();
 
     // Determine tasks to re-tag: tasks with current active tag or tasks tagged CSV
-    const tasksToRetag = activeTag !== 'ALL' 
-      ? tasks.filter(t => (t.tag || '').toUpperCase() === activeTag.toUpperCase())
+    const tasksToRetag = currentFilter !== 'ALL' 
+      ? tasks.filter(t => t.tag === currentFilter)
       : tasks.filter(t => (t.tag || '').toUpperCase() === 'CSV');
 
     if (tasksToRetag.length === 0) {
-      alert(`No tasks found with tag #${activeTag !== 'ALL' ? activeTag : 'CSV'}.`);
+      alert(`No tasks found with tag #${currentFilter !== 'ALL' ? currentFilter : 'CSV'}.`);
       return;
     }
 
@@ -462,23 +503,22 @@ export default function TaskDesk({
     onDeleteTask(id);
   };
 
-  // Filter tasks based on search, category and view filter
+  // Filter tasks based on tag filter, view filter and search query
   const filteredTasks = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
 
     return tasks.filter(task => {
-      // Search text match
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchTitle = (task.title || '').toLowerCase().includes(q);
-        const matchNotes = (task.notes || '').toLowerCase().includes(q);
-        const matchTag = (task.tag || '').toLowerCase().includes(q);
-        if (!matchTitle && !matchNotes && !matchTag) return false;
-      }
-
-      // Tag filter
-      if (activeTag !== 'ALL') {
-        if ((task.tag || '').toUpperCase() !== activeTag.toUpperCase()) return false;
+      // Tag filter button evaluation:
+      // Evaluated using strict equality against the database `tag` column (e.g., task.tag === currentFilter)
+      // Do not use .includes() or loose string matching on the title/description for the tag filter buttons
+      if (currentFilter && currentFilter !== 'ALL') {
+        if (task.tag === currentFilter) {
+          // Strict equality match against database tag column
+        } else if (currentFilter.startsWith('#') && task.tag === currentFilter.slice(1)) {
+          // Strict equality match when filter has leading hash
+        } else {
+          return false;
+        }
       }
 
       // View Filter
@@ -490,9 +530,18 @@ export default function TaskDesk({
         if (task.date >= today || task.completed) return false;
       }
 
+      // Search text match (only applies if user typed in the search box)
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchTitle = (task.title || '').toLowerCase().includes(q);
+        const matchNotes = (task.notes || '').toLowerCase().includes(q);
+        const matchTag = (task.tag || '').toLowerCase().includes(q);
+        if (!matchTitle && !matchNotes && !matchTag) return false;
+      }
+
       return true;
     });
-  }, [tasks, searchQuery, activeTag, viewFilter]);
+  }, [tasks, currentFilter, viewFilter, searchQuery]);
 
   // Multi-level sort:
   // 1. Sort chronologically in ascending order by task.date
@@ -737,9 +786,14 @@ export default function TaskDesk({
           {['ALL', ...allAvailableTags].map((tag) => (
             <button
               key={tag}
-              onClick={() => { sound.playClick(); setActiveTag(tag); }}
+              onClick={() => {
+                sound.playClick();
+                setCurrentFilter(tag);
+                if (onSelectFilter) onSelectFilter(tag);
+                if (onSelectCategory) onSelectCategory(tag);
+              }}
               className={`px-1.5 py-0.5 border text-[10px] font-mono flex-shrink-0 ${
-                activeTag === tag
+                currentFilter === tag
                   ? 'bg-black text-white border-black font-bold'
                   : 'bg-white border-black hover:bg-neutral-100'
               }`}
