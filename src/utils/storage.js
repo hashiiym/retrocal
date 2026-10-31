@@ -8,6 +8,27 @@ const USER_KEY = 'retrocal_auth_user';
 const SUPABASE_ENV_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ENV_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// Single shared Supabase client instance
+export const supabase = (SUPABASE_ENV_URL && SUPABASE_ENV_ANON_KEY)
+  ? createClient(SUPABASE_ENV_URL, SUPABASE_ENV_ANON_KEY)
+  : null;
+
+// Auth helper functions
+export async function signInWithGoogle() {
+  if (!supabase) throw new Error('Supabase is not configured. Check environment variables.');
+  return await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: window.location.origin,
+    },
+  });
+}
+
+export async function signOut() {
+  if (!supabase) return;
+  return await supabase.auth.signOut();
+}
+
 // BroadcastChannel for instant real-time synchronization across browser tabs/windows
 const syncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window 
   ? new BroadcastChannel('retrocal_sync_channel')
@@ -80,7 +101,8 @@ export const INITIAL_TASKS = [
 export class StorageManager {
   constructor() {
     this.listeners = new Set();
-    this.supabase = null;
+    this.supabase = supabase;
+    this.currentUserId = null;
     this.initSupabase();
 
     if (syncChannel) {
@@ -110,13 +132,25 @@ export class StorageManager {
   }
 
   // Supabase client initialization using Vite environment variables
-  initSupabase() {
+  async initSupabase() {
+    if (!this.supabase) return;
     try {
-      if (SUPABASE_ENV_URL && SUPABASE_ENV_ANON_KEY) {
-        this.supabase = createClient(SUPABASE_ENV_URL, SUPABASE_ENV_ANON_KEY);
-        this.setupSupabaseSubscription();
-        this.fetchFromSupabase();
+      // Get current auth session
+      const { data: { session } } = await this.supabase.auth.getSession();
+      if (session?.user) {
+        this.currentUserId = session.user.id;
+        this.fetchFromSupabase(this.currentUserId);
       }
+
+      // Listen for auth state changes
+      this.supabase.auth.onAuthStateChange((event, session) => {
+        this.currentUserId = session?.user?.id || null;
+        if (this.currentUserId) {
+          this.fetchFromSupabase(this.currentUserId);
+        }
+      });
+
+      this.setupSupabaseSubscription();
     } catch (e) {
       console.warn('Supabase env init error:', e);
     }
@@ -141,7 +175,9 @@ export class StorageManager {
       this.supabase
         .channel('public:tasks')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
-          this.fetchFromSupabase();
+          if (this.currentUserId) {
+            this.fetchFromSupabase(this.currentUserId);
+          }
         })
         .subscribe();
     } catch (e) {
@@ -149,13 +185,19 @@ export class StorageManager {
     }
   }
 
-  async fetchFromSupabase() {
+  async fetchFromSupabase(userId) {
     if (!this.supabase) return null;
     try {
-      const { data, error } = await this.supabase
+      let query = this.supabase
         .from('tasks')
         .select('*')
         .order('createdAt', { ascending: false });
+
+      if (userId) {
+        query = query.eq('user_id', userId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       if (data && data.length > 0) {
@@ -187,11 +229,6 @@ export class StorageManager {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
       this.notifyListeners(tasks, true);
-
-      // Async sync to Supabase if configured
-      if (this.supabase) {
-        this.syncAllToSupabase(tasks);
-      }
     } catch (e) {
       console.error('Storage save error:', e);
     }
@@ -211,9 +248,9 @@ export class StorageManager {
     const current = this.getTasks();
     const newTask = {
       ...task,
-      id: 'task-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
-      createdAt: Date.now(),
-      completed: false,
+      id: task.id || ('task-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4)),
+      createdAt: task.createdAt || Date.now(),
+      completed: Boolean(task.completed),
     };
     const updated = [newTask, ...current];
     this.saveTasks(updated);
@@ -238,26 +275,49 @@ export class StorageManager {
     return formatted;
   }
 
-  updateTask(id, updates) {
+  async updateTask(id, updates) {
     const current = this.getTasks();
     const updated = current.map(t => t.id === id ? { ...t, ...updates } : t);
     this.saveTasks(updated);
+
+    if (this.supabase) {
+      try {
+        await this.supabase.from('tasks').update(updates).eq('id', id);
+      } catch (err) {
+        console.warn('Supabase update error:', err);
+      }
+    }
+
     return updated.find(t => t.id === id);
   }
 
-  deleteTask(id) {
+  async deleteTask(id) {
     const current = this.getTasks();
     const updated = current.filter(t => t.id !== id);
     this.saveTasks(updated);
+
     if (this.supabase) {
-      this.supabase.from('tasks').delete().eq('id', id).then();
+      try {
+        await this.supabase.from('tasks').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Supabase delete error:', err);
+      }
     }
   }
 
-  clearCompleted() {
+  async clearCompleted() {
     const current = this.getTasks();
+    const completedIds = current.filter(t => t.completed).map(t => t.id);
     const updated = current.filter(t => !t.completed);
     this.saveTasks(updated);
+
+    if (this.supabase && completedIds.length > 0) {
+      try {
+        await this.supabase.from('tasks').delete().in('id', completedIds);
+      } catch (err) {
+        console.warn('Supabase delete completed error:', err);
+      }
+    }
   }
 
   resetToDemo() {
@@ -270,7 +330,6 @@ export class StorageManager {
       const saved = localStorage.getItem(USER_KEY);
       if (saved) return JSON.parse(saved);
     } catch {}
-    // Default demo user
     return {
       id: 'demo-user-retro',
       email: 'retro_user@sys6.os',

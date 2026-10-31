@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Volume2, VolumeX, Bell, BellOff, Sun, Moon, Cpu, Calendar, Shield, HelpCircle } from 'lucide-react';
+import { Volume2, VolumeX, Bell, BellOff, Sun, Moon, Cpu, Calendar, Shield, HelpCircle, LogIn, LogOut } from 'lucide-react';
 import { sound } from '../utils/audio';
+import { supabase, signInWithGoogle, signOut } from '../utils/storage';
 
 export default function RetroMenuBar({
   onOpenAuth,
@@ -22,6 +23,7 @@ export default function RetroMenuBar({
   const [dateStr, setDateStr] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(sound.enabled);
   const [activeMenu, setActiveMenu] = useState(null);
+  const [sessionUser, setSessionUser] = useState(null);
 
   // Live retro clock
   useEffect(() => {
@@ -35,9 +37,56 @@ export default function RetroMenuBar({
     return () => clearInterval(interval);
   }, []);
 
+  // Supabase Auth session listener
+  useEffect(() => {
+    if (!supabase) return;
+
+    // Fetch active session on mount
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSessionUser(session?.user || null);
+    });
+
+    // Subscribe to auth state updates
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSessionUser(session?.user || null);
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, []);
+
   const toggleSound = () => {
     const val = sound.toggle();
     setSoundEnabled(val);
+  };
+
+  // Google OAuth Sign In
+  const handleGoogleSignIn = async () => {
+    sound.playClick();
+    if (!supabase) {
+      alert('Supabase is not configured. Check your environment variables.');
+      return;
+    }
+    try {
+      const { error } = await signInWithGoogle();
+      if (error) throw error;
+    } catch (err) {
+      console.error('Google Sign In Error:', err);
+      alert('Google Sign-In Error: ' + err.message);
+    }
+  };
+
+  // Sign Out
+  const handleSignOut = async () => {
+    sound.playClick();
+    if (!supabase) return;
+    try {
+      await signOut();
+      setSessionUser(null);
+    } catch (err) {
+      console.error('Sign Out Error:', err);
+    }
   };
 
   // Close dropdown menu on outside click
@@ -159,7 +208,7 @@ export default function RetroMenuBar({
           </button>
         </div>
 
-        {/* Right: Controls & Live Clock */}
+        {/* Right: Controls, Auth UI & Live Clock */}
         <div className="flex items-center gap-2 flex-wrap">
           
           {/* Sound FX Button */}
@@ -192,16 +241,34 @@ export default function RetroMenuBar({
             <span className="hidden lg:inline">{isInverted ? 'LIGHT' : 'DARK'}</span>
           </button>
 
-          {/* User Account / Cloud Sync status */}
-          <button
-            onClick={() => { sound.playClick(); onOpenAuth(); }}
-            className="px-2 py-0.5 border border-black bg-white hover:bg-black hover:text-white flex items-center gap-1 text-[11px]"
-            title="Cloud & Auth Configuration"
-          >
-            <Shield className="w-3 h-3" />
-            <span className="max-w-[100px] truncate">{user?.name || 'Account'}</span>
-            <span className="w-2 h-2 rounded-full border border-black bg-green-500 inline-block" title="Sync Online"></span>
-          </button>
+          {/* Supabase Authentication UI: Google Sign In / User Email & Sign Out */}
+          {sessionUser ? (
+            <div className="flex items-center gap-1">
+              <div
+                onClick={() => { sound.playClick(); onOpenAuth(); }}
+                className="px-2 py-0.5 border border-black bg-neutral-100 hover:bg-neutral-200 flex items-center gap-1.5 cursor-pointer text-[11px] shadow-[1px_1px_0px_#000]"
+                title={`Authenticated as ${sessionUser.email}`}
+              >
+                <span className="w-2 h-2 rounded-full border border-black bg-green-500 inline-block"></span>
+                <span className="max-w-[120px] sm:max-w-[180px] truncate font-bold">{sessionUser.email}</span>
+              </div>
+              <button
+                onClick={handleSignOut}
+                className="px-1.5 py-0.5 border border-black bg-white hover:bg-black hover:text-white font-pixel text-[9px] shadow-[1px_1px_0px_#000]"
+                title="Sign out of account"
+              >
+                [SIGN OUT]
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleGoogleSignIn}
+              className="px-2 py-0.5 border-2 border-black bg-white hover:bg-black hover:text-white font-pixel text-[10px] flex items-center gap-1 shadow-[2px_2px_0px_#000] active:translate-x-[1px] active:translate-y-[1px]"
+              title="Sign in with Google via Supabase Authentication"
+            >
+              <span>[SIGN IN WITH GOOGLE]</span>
+            </button>
+          )}
 
           {/* Digital Clock */}
           <div className="border border-black px-2 py-0.5 bg-white font-term text-sm tracking-widest font-bold">

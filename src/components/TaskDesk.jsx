@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Plus, Check, Trash2, Edit3, Calendar as CalendarIcon, 
   Clock, Tag, AlertCircle, Filter, Search, Download, 
@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { sound } from '../utils/audio';
-import { storage } from '../utils/storage';
+import { storage, supabase } from '../utils/storage';
 
 const TAG_OPTIONS = ['WORK', 'DEV', 'LIFE', 'HEALTH', 'RETRO', 'URGENT', 'CSV'];
 const PRIORITY_OPTIONS = [
@@ -26,6 +26,9 @@ export default function TaskDesk({
   selectedDate,
   onSelectDate,
 }) {
+  // Current authenticated user state
+  const [authUser, setAuthUser] = useState(null);
+
   // Quick-add state
   const [newTitle, setNewTitle] = useState('');
   const [newDate, setNewDate] = useState(selectedDate || new Date().toISOString().split('T')[0]);
@@ -45,19 +48,82 @@ export default function TaskDesk({
   const fileInputRef = useRef(null);
 
   // Sync date when parent changes selectedDate
-  React.useEffect(() => {
+  useEffect(() => {
     if (selectedDate) {
       setNewDate(selectedDate);
     }
   }, [selectedDate]);
 
-  // Handle Quick Add
-  const handleCreate = (e) => {
+  // Supabase Auth and User-Specific Data Fetching on load
+  useEffect(() => {
+    if (!supabase) return;
+
+    // Helper to fetch tasks filtered by user_id
+    const fetchUserTasks = async (userId) => {
+      if (!userId) return;
+      try {
+        const { data, error } = await supabase
+          .from('tasks')
+          .select('*')
+          .eq('user_id', userId)
+          .order('createdAt', { ascending: false });
+
+        if (error) {
+          console.warn('Error fetching user tasks from Supabase:', error);
+          return;
+        }
+
+        if (data && data.length > 0) {
+          storage.saveTasks(data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch tasks for user:', err);
+      }
+    };
+
+    // Initialize session and fetch data
+    const initAuthAndFetch = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user || null;
+      setAuthUser(user);
+
+      if (user?.id) {
+        fetchUserTasks(user.id);
+      }
+    };
+
+    initAuthAndFetch();
+
+    // Listen to Supabase auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const user = session?.user || null;
+      setAuthUser(user);
+      if (user?.id) {
+        fetchUserTasks(user.id);
+      }
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, []);
+
+  // Handle Quick Add with user_id attached
+  const handleCreate = async (e) => {
     if (e) e.preventDefault();
     if (!newTitle.trim()) return;
 
     sound.playAdd();
-    onAddTask({
+
+    // Fetch the current authenticated user's session
+    let userId = authUser?.id;
+    if (supabase && !userId) {
+      const { data: { session } } = await supabase.auth.getSession();
+      userId = session?.user?.id;
+    }
+
+    const newTask = {
+      id: 'task-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
       title: newTitle.trim(),
       date: newDate,
       time: newTime,
@@ -65,8 +131,24 @@ export default function TaskDesk({
       tag: newTag,
       reminder: newReminder,
       notes: '',
-    });
+      completed: false,
+      createdAt: Date.now(),
+      user_id: userId || null, // Appended user_id
+    };
 
+    // Insert task into Supabase tasks table with user_id
+    if (supabase && userId) {
+      try {
+        const { error } = await supabase.from('tasks').insert([newTask]);
+        if (error) {
+          console.error('Supabase task insert error:', error);
+        }
+      } catch (err) {
+        console.error('Failed to insert task to Supabase:', err);
+      }
+    }
+
+    onAddTask(newTask);
     setNewTitle('');
   };
 
@@ -79,14 +161,20 @@ export default function TaskDesk({
     }
   };
 
-  // CSV Parsing Logic via FileReader
-  // Expected format: Description,Date,Time,Priority
-  const handleCsvUpload = (e) => {
+  // CSV Parsing Logic via FileReader with user_id attached
+  const handleCsvUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Fetch current user session
+    let userId = authUser?.id;
+    if (supabase && !userId) {
+      const { data: { session } } = await supabase.auth.getSession();
+      userId = session?.user?.id;
+    }
+
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const text = event.target?.result;
         if (!text || typeof text !== 'string') return;
@@ -101,11 +189,10 @@ export default function TaskDesk({
         const newTasks = [];
 
         lines.forEach((line, index) => {
-          // Parse CSV columns, trimming surrounding whitespace and quotes
           const columns = line.split(',').map(col => col.trim().replace(/^["']|["']$/g, ''));
           if (columns.length === 0 || !columns[0]) return;
 
-          // Skip header row if Description / Title is present
+          // Skip header row
           if (index === 0 && (
             columns[0].toLowerCase().includes('description') ||
             columns[0].toLowerCase().includes('title') ||
@@ -116,7 +203,6 @@ export default function TaskDesk({
 
           const description = columns[0];
           let date = columns[1] || todayStr;
-          // Validate date format YYYY-MM-DD
           if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
             const parsed = new Date(date);
             date = !isNaN(parsed.getTime()) ? parsed.toISOString().split('T')[0] : todayStr;
@@ -136,29 +222,40 @@ export default function TaskDesk({
             priority = 'LOW';
           }
 
-          // Map the parsed rows into new task objects with default 'pending' (completed: false)
           newTasks.push({
             id: 'task-csv-' + Date.now() + '-' + index + '-' + Math.random().toString(36).substr(2, 4),
             title: description,
             date,
             time,
             priority,
-            completed: false, // Default 'pending' status
+            completed: false,
             tag: 'CSV',
             notes: 'Imported from CSV',
             reminder: '15m',
             createdAt: Date.now() + index,
+            user_id: userId || null, // Appended user_id
           });
         });
 
         if (newTasks.length > 0) {
           sound.playAdd();
-          // Append to existing tasks state and Supabase database
+
+          // Insert into Supabase tasks table
+          if (supabase && userId) {
+            try {
+              const { error } = await supabase.from('tasks').insert(newTasks);
+              if (error) console.error('Supabase CSV insert error:', error);
+            } catch (err) {
+              console.error('Supabase CSV insert failed:', err);
+            }
+          }
+
           if (onImportTasks) {
             onImportTasks(newTasks);
           } else {
             storage.addTasks(newTasks);
           }
+
           setCsvStatusMessage(`SUCCESS: Imported ${newTasks.length} pending tasks from "${file.name}"!`);
           setTimeout(() => setCsvStatusMessage(''), 5000);
         } else {
@@ -174,7 +271,7 @@ export default function TaskDesk({
   };
 
   // Toggle Complete
-  const handleToggle = (task) => {
+  const handleToggle = async (task) => {
     const nextCompleted = !task.completed;
     if (nextCompleted) {
       sound.playComplete();
@@ -190,13 +287,38 @@ export default function TaskDesk({
     } else {
       sound.playUncomplete();
     }
+
     onUpdateTask(task.id, { completed: nextCompleted });
+
+    if (supabase && authUser?.id) {
+      try {
+        await supabase
+          .from('tasks')
+          .update({ completed: nextCompleted })
+          .eq('id', task.id)
+          .eq('user_id', authUser.id);
+      } catch (err) {
+        console.warn('Supabase toggle error:', err);
+      }
+    }
   };
 
   // Delete Task
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     sound.playDelete();
     onDeleteTask(id);
+
+    if (supabase && authUser?.id) {
+      try {
+        await supabase
+          .from('tasks')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', authUser.id);
+      } catch (err) {
+        console.warn('Supabase delete error:', err);
+      }
+    }
   };
 
   // Filter calculations

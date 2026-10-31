@@ -72,13 +72,15 @@ VAPID_SUBJECT=mailto:admin@retrocal.io
 
 ---
 
-## 🗄️ Supabase PostgreSQL Schema
+## 🗄️ Supabase PostgreSQL Schema (with User-Specific Row Level Security)
 
-Run this in your Supabase SQL Editor to enable real-time sync with Row Level Security:
+Run this in your Supabase SQL Editor to enable multi-device sync with user-specific Row Level Security:
 
 ```sql
+-- 1. Ensure tasks table exists with user_id
 CREATE TABLE IF NOT EXISTS public.tasks (
   id TEXT PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   completed BOOLEAN DEFAULT FALSE,
   date DATE NOT NULL,
@@ -90,10 +92,44 @@ CREATE TABLE IF NOT EXISTS public.tasks (
   "createdAt" BIGINT NOT NULL
 );
 
--- Enable RLS
-ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Public full access" ON public.tasks FOR ALL USING (true);
+-- 2. Add user_id column if table already exists
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
 
--- Enable Realtime Sync
+-- 3. Enable Row Level Security (RLS)
+ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
+
+-- 4. Clean up any existing legacy policies
+DROP POLICY IF EXISTS "Public full access" ON public.tasks;
+DROP POLICY IF EXISTS "Users can select own tasks" ON public.tasks;
+DROP POLICY IF EXISTS "Users can insert own tasks" ON public.tasks;
+DROP POLICY IF EXISTS "Users can update own tasks" ON public.tasks;
+DROP POLICY IF EXISTS "Users can delete own tasks" ON public.tasks;
+
+-- 5. Create user-specific RLS policies (SELECT, INSERT, UPDATE, DELETE)
+CREATE POLICY "Users can select own tasks" 
+ON public.tasks FOR SELECT 
+TO authenticated 
+USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own tasks" 
+ON public.tasks FOR INSERT 
+TO authenticated 
+WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own tasks" 
+ON public.tasks FOR UPDATE 
+TO authenticated 
+USING (auth.uid() = user_id) 
+WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own tasks" 
+ON public.tasks FOR DELETE 
+TO authenticated 
+USING (auth.uid() = user_id);
+
+-- 6. Performance index on user_id
+CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON public.tasks (user_id);
+
+-- 7. Enable Realtime Sync
 ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks;
 ```
