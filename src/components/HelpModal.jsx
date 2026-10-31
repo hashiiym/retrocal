@@ -40,10 +40,10 @@ export default function HelpModal({ isOpen, onClose, onOpenApiGuide }) {
             <div className="border border-black p-2 bg-white space-y-1">
               <span className="font-pixel text-[10px] font-bold block">KEYBOARD SHORTCUTS & TIPS:</span>
               <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-800">
-                <div><kbd className="border border-black px-1 font-bold bg-neutral-100">Enter</kbd> Add Quick Task</div>
+                <div><kbd className="border border-black px-1 font-bold bg-neutral-100">+ NEW</kbd> Create New Task</div>
                 <div><kbd className="border border-black px-1 font-bold bg-neutral-100">Click [ ]</kbd> Toggle Completion</div>
                 <div><kbd className="border border-black px-1 font-bold bg-neutral-100">SND:ON</kbd> Web Audio 8-bit Sound</div>
-                <div><kbd className="border border-black px-1 font-bold bg-neutral-100">INVERT</kbd> Dark / Light Display</div>
+                <div><kbd className="border border-black px-1 font-bold bg-neutral-100">SYLLABUS</kbd> Academic Tracker</div>
               </div>
             </div>
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Volume2, VolumeX, Bell, BellOff, Sun, Moon, Cpu, Calendar, Shield, HelpCircle, LogIn, LogOut } from 'lucide-react';
+import { Volume2, VolumeX, Bell, BellOff, Cpu, Calendar, Shield, HelpCircle, LogIn, LogOut } from 'lucide-react';
 import { sound } from '../utils/audio';
 import { supabase, signInWithGoogle, signOut } from '../utils/storage';
 
@@ -8,8 +8,6 @@ export default function RetroMenuBar({
   onOpenGoogleSync,
   onOpenApiGuide,
   onOpenHelp,
-  onToggleInvert,
-  isInverted,
   activeFilter,
   setActiveFilter,
   activeView,
@@ -212,13 +210,6 @@ export default function RetroMenuBar({
                   </span>
                   <span>{isSyllabusOpen ? '✓' : ''}</span>
                 </button>
-                <div className="border-t border-black my-1"></div>
-                <button 
-                  onClick={() => { onToggleInvert(); setActiveMenu(null); }}
-                  className="w-full text-left px-3 py-1 hover:bg-black hover:text-white"
-                >
-                  <span>{isInverted ? 'Light Screen (Mac)' : 'Invert Screen (DOS)'}</span>
-                </button>
               </div>
             )}
           </div>
@@ -289,16 +280,6 @@ export default function RetroMenuBar({
           >
             {notificationPermission === 'granted' ? <Bell className="w-3 h-3" /> : <BellOff className="w-3 h-3" />}
             <span className="hidden md:inline">{notificationPermission === 'granted' ? 'NOTIF:ACTIVE' : 'NOTIF:OFF'}</span>
-          </button>
-
-          {/* Invert Screen (Light Mac / Dark DOS) */}
-          <button
-            onClick={() => { sound.playClick(); onToggleInvert(); }}
-            className="px-1.5 py-0.5 border border-black bg-white hover:bg-black hover:text-white font-pixel text-[10px] flex items-center gap-1"
-            title="Invert Display Colors"
-          >
-            {isInverted ? <Sun className="w-3 h-3" /> : <Moon className="w-3 h-3" />}
-            <span className="hidden lg:inline">{isInverted ? 'LIGHT' : 'DARK'}</span>
           </button>
 
           {/* Supabase Authentication UI: Google Sign In / User Email & Sign Out */}

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
-  Plus, Check, Trash2, Edit3, Calendar as CalendarIcon, 
+  Check, Trash2, Edit3, Calendar as CalendarIcon, 
   Clock, Tag, AlertCircle, Filter, Search, Download, 
   CheckSquare, Square, FileUp, CheckCircle2, Tag as TagIcon
 } from 'lucide-react';
@@ -12,11 +12,6 @@ import { storage, supabase } from './utils/storage';
 export const normalizeTag = (t) => (t ? (t.startsWith('#') ? t.toUpperCase() : `#${t.toUpperCase()}`) : '#WORK');
 
 const TAG_OPTIONS = ['#WORK', '#DEV', '#LIFE', '#HEALTH', '#RETRO', '#URGENT', '#CSV'];
-const PRIORITY_OPTIONS = [
-  { value: 'LOW', label: '[!] LOW', color: 'bg-neutral-100 text-neutral-800' },
-  { value: 'MEDIUM', label: '[!!] MED', color: 'bg-neutral-200 text-black font-bold' },
-  { value: 'HIGH', label: '[!!!] HIGH', color: 'bg-black text-white font-bold' },
-];
 
 // Priority rank for secondary sort ('HIGH' > 'MEDIUM' > 'LOW')
 const PRIORITY_ORDER = {
@@ -48,15 +43,6 @@ export default function TaskDesk({
   useEffect(() => {
     setTasks(initialTasks || []);
   }, [initialTasks]);
-
-  // Quick-Add Form state
-  const [newTitle, setNewTitle] = useState('');
-  const [newDate, setNewDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [newTime, setNewTime] = useState('10:00');
-  const [newPriority, setNewPriority] = useState('MEDIUM');
-  const [newTag, setNewTag] = useState('#WORK');
-  const [newReminder, setNewReminder] = useState('15m');
-  const [showAdvancedAdd, setShowAdvancedAdd] = useState(false);
 
   // Search & Filtering state
   const [searchQuery, setSearchQuery] = useState('');
@@ -172,56 +158,6 @@ export default function TaskDesk({
     };
   }, []);
 
-  // Quick Add Task Form Submit Handler
-  const handleQuickAdd = async (e) => {
-    if (e) e.preventDefault();
-    if (!newTitle.trim()) return;
-
-    sound.playAdd();
-
-    // Fetch the current authenticated user's session
-    let userId = authUser?.id;
-    if (supabase && !userId) {
-      const { data: { session } } = await supabase.auth.getSession();
-      userId = session?.user?.id;
-    }
-
-    // Normalize tag when creating tasks
-    const cleanTag = normalizeTag(newTag || 'WORK');
-
-    const newTask = {
-      id: 'task-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
-      title: newTitle.trim(),
-      date: newDate,
-      time: newTime,
-      priority: newPriority,
-      tag: cleanTag,
-      reminder: newReminder,
-      notes: '',
-      completed: false,
-      createdAt: Date.now(),
-      user_id: userId || null, // Appended user_id
-    };
-
-    // Insert task into Supabase tasks table with user_id
-    if (supabase && userId) {
-      try {
-        const { error } = await supabase.from('tasks').insert([newTask]);
-        if (error) {
-          console.error('Supabase task insert error:', error);
-        }
-      } catch (err) {
-        console.error('Failed to insert task to Supabase:', err);
-      }
-    }
-
-    setTasks(prev => [newTask, ...prev.filter(t => t.id !== newTask.id)]);
-    if (onAddTask) {
-      onAddTask(newTask);
-    }
-    setNewTitle('');
-  };
-
   // CSV Import: Trigger hidden file input
   const handleTriggerCsvInput = () => {
     sound.playClick();
@@ -273,8 +209,8 @@ export default function TaskDesk({
           }
         }
 
-        // Custom given category from Quick-Add bar if CSV row has no category
-        const customFallbackCategory = normalizeTag(newTag || selectedTag || 'WORK');
+        // Custom fallback category if CSV row has no category
+        const customFallbackCategory = normalizeTag(selectedTag && selectedTag !== '#ALL' ? selectedTag : 'WORK');
 
         lines.forEach((line, index) => {
           // Destructure 5 variables from the CSV row: [description, date, time, priority, category]
@@ -386,7 +322,7 @@ export default function TaskDesk({
 
   // Batch retag tasks (e.g. to fix tasks currently tagged #CSV to a custom category like PCECT303 or STUDY)
   const handleRetagCsvTasks = async () => {
-    const targetTag = prompt('Enter custom category/tag for these tasks (e.g. PCECT303, STUDY, WORK):', newTag || 'STUDY');
+    const targetTag = prompt('Enter custom category/tag for these tasks (e.g. PCECT303, STUDY, WORK):', selectedTag && selectedTag !== '#ALL' ? selectedTag : 'STUDY');
     if (!targetTag || !targetTag.trim()) return;
     const cleanTag = normalizeTag(targetTag.trim());
 
@@ -632,128 +568,7 @@ export default function TaskDesk({
         </div>
       )}
 
-      {/* Quick Add Bar / Command Line */}
-      <div className="border-2 border-black p-3 bg-white shadow-[3px_3px_0px_#000]">
-        <div className="flex items-center justify-between mb-2 pb-1 border-b border-black">
-          <span className="font-pixel text-xs tracking-wider font-bold">
-            &gt; QUICK-ADD TASK COMMAND
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleTriggerCsvInput}
-              className="px-2 py-0.5 border border-black text-[10px] font-pixel bg-white hover:bg-black hover:text-white flex items-center gap-1 shadow-[1px_1px_0px_#000]"
-              title="Import tasks from a CSV file"
-            >
-              <FileUp className="w-3 h-3" />
-              <span>[+] IMPORT CSV</span>
-            </button>
-            <button
-              onClick={handleWipeTasks}
-              className="px-2 py-0.5 border border-black text-[10px] font-pixel bg-white hover:bg-black hover:text-white flex items-center gap-1 shadow-[1px_1px_0px_#000]"
-              title="Wipe all tasks for current user"
-            >
-              <Trash2 className="w-3 h-3" />
-              <span>[X] WIPE DATA</span>
-            </button>
-            <button
-              onClick={() => setShowAdvancedAdd(!showAdvancedAdd)}
-              className="text-[10px] font-pixel px-1.5 py-0.5 border border-black hover:bg-black hover:text-white"
-            >
-              {showAdvancedAdd ? '[- LESS]' : '[+ MORE OPTIONS]'}
-            </button>
-          </div>
-        </div>
-
-        <form onSubmit={handleQuickAdd} className="space-y-2">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Type task description & press Enter..."
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              className="flex-1 border-2 border-black px-2 py-1.5 text-xs font-mono bg-white focus:bg-neutral-50 outline-none"
-            />
-            <button
-              type="submit"
-              className="px-4 py-1.5 bg-white border-2 border-black font-pixel text-xs font-bold hover:bg-black hover:text-white shadow-[2px_2px_0px_#000] active:translate-x-[1px] active:translate-y-[1px]"
-            >
-              + ADD
-            </button>
-          </div>
-
-          {/* Quick task metadata inputs */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-1">
-            <div>
-              <label className="block text-[10px] text-neutral-600 font-pixel">DATE:</label>
-              <input
-                type="date"
-                value={newDate}
-                onChange={(e) => setNewDate(e.target.value)}
-                className="w-full border border-black px-1.5 py-1 text-xs bg-white"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] text-neutral-600 font-pixel">TIME:</label>
-              <input
-                type="time"
-                value={newTime}
-                onChange={(e) => setNewTime(e.target.value)}
-                className="w-full border border-black px-1.5 py-1 text-xs bg-white"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] text-neutral-600 font-pixel">PRIORITY:</label>
-              <select
-                value={newPriority}
-                onChange={(e) => setNewPriority(e.target.value)}
-                className="w-full border border-black px-1 py-1 text-xs bg-white font-mono"
-              >
-                {PRIORITY_OPTIONS.map((p) => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[10px] text-neutral-600 font-pixel">CATEGORY / TAG:</label>
-              <input
-                type="text"
-                list="quick-add-tags"
-                value={newTag}
-                onChange={(e) => setNewTag(e.target.value.toUpperCase().replace(/^#/, ''))}
-                placeholder="e.g. WORK"
-                className="w-full border border-black px-1.5 py-1 text-xs bg-white font-mono uppercase"
-              />
-              <datalist id="quick-add-tags">
-                {allAvailableTags.map((t) => (
-                  <option key={t} value={t}>#{t}</option>
-                ))}
-              </datalist>
-            </div>
-          </div>
-
-          {showAdvancedAdd && (
-            <div className="pt-2 border-t border-dashed border-black flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-pixel">REMINDER ALERT:</span>
-                <select
-                  value={newReminder}
-                  onChange={(e) => setNewReminder(e.target.value)}
-                  className="border border-black px-1 py-0.5 text-xs bg-white font-mono"
-                >
-                  <option value="none">None</option>
-                  <option value="at_time">At time of task</option>
-                  <option value="5m">5 mins before</option>
-                  <option value="15m">15 mins before</option>
-                  <option value="30m">30 mins before</option>
-                  <option value="1h">1 hour before</option>
-                </select>
-              </div>
-            </div>
-          )}
-        </form>
-      </div>
-
-      {/* Productivity Progress Bar */}
+      {/* Productivity Progress Bar (shifted up) */}
       <div className="border-2 border-black p-2 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-2 flex-1">
           <span className="font-pixel text-[10px]">PROGRESS:</span>
@@ -849,7 +664,7 @@ export default function TaskDesk({
           <div className="p-8 text-center border-2 border-dashed border-black bg-white space-y-2">
             <CheckSquare className="w-8 h-8 mx-auto opacity-30" />
             <p className="font-pixel text-xs text-neutral-600">NO TASKS FOUND</p>
-            <p className="text-[10px] text-neutral-400">Use the quick-add bar above or import tasks via CSV.</p>
+            <p className="text-[10px] text-neutral-400">Click '+ NEW' above or import tasks via CSV.</p>
           </div>
         ) : (
           sortedTasks.map((task) => {

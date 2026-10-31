@@ -25,7 +25,6 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [activeCalendarView, setActiveCalendarView] = useState('month'); // 'month', 'week', 'day'
   const [activeDeskTab, setActiveDeskTab] = useState('dual'); // 'dual', 'tasks', 'calendar'
-  const [isInverted, setIsInverted] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState(notifications.permission);
 
   // Modals state
@@ -119,15 +118,13 @@ export default function App() {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col retro-desktop-bg ${isInverted ? 'inverted' : ''}`}>
+    <div className="min-h-screen flex flex-col retro-desktop-bg">
       {/* Top Retro Menu Bar */}
       <RetroMenuBar
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onOpenGoogleSync={() => setIsGoogleSyncModalOpen(true)}
         onOpenApiGuide={() => setIsApiGuideModalOpen(true)}
         onOpenHelp={() => setIsHelpModalOpen(true)}
-        onToggleInvert={() => setIsInverted(!isInverted)}
-        isInverted={isInverted}
         activeView={activeCalendarView}
         setActiveView={setActiveCalendarView}
         notificationPermission={notificationPermission}
