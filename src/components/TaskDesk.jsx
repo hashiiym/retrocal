@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Plus, Check, Trash2, Edit3, Calendar as CalendarIcon, 
   Clock, Tag, AlertCircle, Filter, Search, Download, 
-  CheckSquare, Square, FileUp, CheckCircle2
+  CheckSquare, Square, FileUp, CheckCircle2, Tag as TagIcon
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { sound } from '../utils/audio';
@@ -58,6 +58,12 @@ export default function TaskDesk({
   
   // Hidden file input reference for CSV import
   const fileInputRef = useRef(null);
+
+  // Dynamic tags computed from preset options and all existing task custom tags
+  const allAvailableTags = useMemo(() => {
+    const customTags = tasks.map(t => t.tag?.toUpperCase()).filter(Boolean);
+    return Array.from(new Set([...TAG_OPTIONS, ...customTags]));
+  }, [tasks]);
 
   // Monitor Supabase session and fetch user-specific tasks on auth load
   useEffect(() => {
@@ -123,13 +129,15 @@ export default function TaskDesk({
       userId = session?.user?.id;
     }
 
+    const cleanTag = newTag ? newTag.trim().replace(/^#/, '').toUpperCase() : 'WORK';
+
     const newTask = {
       id: 'task-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
       title: newTitle.trim(),
       date: newDate,
       time: newTime,
       priority: newPriority,
-      tag: newTag,
+      tag: cleanTag,
       reminder: newReminder,
       notes: '',
       completed: false,
@@ -189,6 +197,24 @@ export default function TaskDesk({
         const todayStr = new Date().toISOString().split('T')[0];
         const newTasks = [];
 
+        // Check header row for dynamic column positions
+        let headerColMap = null;
+        if (lines.length > 0) {
+          const firstLineCols = lines[0].split(',').map(c => c.trim().toLowerCase().replace(/^["']|["']$/g, ''));
+          if (firstLineCols.some(c => c.includes('desc') || c.includes('title') || c.includes('task'))) {
+            headerColMap = {
+              desc: firstLineCols.findIndex(c => c.includes('desc') || c.includes('title') || c.includes('task')),
+              date: firstLineCols.findIndex(c => c.includes('date')),
+              time: firstLineCols.findIndex(c => c.includes('time')),
+              priority: firstLineCols.findIndex(c => c.includes('prior')),
+              category: firstLineCols.findIndex(c => c.includes('cat') || c.includes('tag') || c.includes('course') || c.includes('subject')),
+            };
+          }
+        }
+
+        // Custom given category from Quick-Add bar if CSV row has no category
+        const customFallbackCategory = (newTag && newTag.trim() ? newTag.trim() : (activeTag !== 'ALL' ? activeTag : 'WORK')).replace(/^#/, '').toUpperCase();
+
         lines.forEach((line, index) => {
           // Destructure 5 variables from the CSV row: [description, date, time, priority, category]
           const [description, date, time, priority, category] = line
@@ -204,6 +230,13 @@ export default function TaskDesk({
             description.toLowerCase().includes('task')
           )) {
             return;
+          }
+
+          // Check if header mapped category from a different column
+          let rowCategory = category;
+          if ((!rowCategory || !rowCategory.trim()) && headerColMap && headerColMap.category !== -1) {
+            const rawCols = line.split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
+            rowCategory = rawCols[headerColMap.category];
           }
 
           let formattedDate = date || todayStr;
@@ -226,11 +259,14 @@ export default function TaskDesk({
             formattedPriority = 'LOW';
           }
 
+          // Clean custom category
+          const cleanCustomCat = (rowCategory && rowCategory.trim()) ? rowCategory.trim().replace(/^#/, '').toUpperCase() : '';
+
           // Construct task object: strictly map description -> title, category -> tag, completed -> false, user_id
           const taskObj = {
             id: 'task-csv-' + Date.now() + '-' + index + '-' + Math.random().toString(36).substr(2, 4),
             title: description,
-            tag: category || 'CSV',
+            tag: category ? (cleanCustomCat || customFallbackCategory) : customFallbackCategory,
             date: formattedDate,
             time: formattedTime,
             priority: formattedPriority,
@@ -263,7 +299,8 @@ export default function TaskDesk({
             storage.addTasks(newTasks);
           }
 
-          setCsvStatusMessage(`SUCCESS: Imported ${newTasks.length} pending tasks from "${file.name}"!`);
+          const appliedTag = newTasks[0].tag;
+          setCsvStatusMessage(`SUCCESS: Imported ${newTasks.length} tasks under category #${appliedTag}!`);
           setTimeout(() => setCsvStatusMessage(''), 5000);
         } else {
           setCsvStatusMessage('No valid task rows could be parsed from the CSV file.');
@@ -278,6 +315,42 @@ export default function TaskDesk({
   };
 
   const handleCsvUpload = handleFileUpload;
+
+  // Batch retag tasks (e.g. to fix tasks currently tagged #CSV to a custom category like PCECT303 or STUDY)
+  const handleRetagCsvTasks = async () => {
+    const targetTag = prompt('Enter custom category/tag for these tasks (e.g. PCECT303, STUDY, WORK):', newTag || 'STUDY');
+    if (!targetTag || !targetTag.trim()) return;
+    const cleanTag = targetTag.trim().replace(/^#/, '').toUpperCase();
+
+    // Determine tasks to re-tag: tasks with current active tag or tasks tagged CSV
+    const tasksToRetag = activeTag !== 'ALL' 
+      ? tasks.filter(t => (t.tag || '').toUpperCase() === activeTag.toUpperCase())
+      : tasks.filter(t => (t.tag || '').toUpperCase() === 'CSV');
+
+    if (tasksToRetag.length === 0) {
+      alert(`No tasks found with tag #${activeTag !== 'ALL' ? activeTag : 'CSV'}.`);
+      return;
+    }
+
+    sound.playAdd();
+
+    if (supabase) {
+      try {
+        const ids = tasksToRetag.map(t => t.id);
+        await supabase.from('tasks').update({ tag: cleanTag }).in('id', ids);
+      } catch (e) {
+        console.error('Failed to update tags in Supabase:', e);
+      }
+    }
+
+    tasksToRetag.forEach(t => {
+      onUpdateTask(t.id, { tag: cleanTag });
+    });
+
+    setActiveTag(cleanTag);
+    setCsvStatusMessage(`SUCCESS: Retagged ${tasksToRetag.length} tasks to #${cleanTag}!`);
+    setTimeout(() => setCsvStatusMessage(''), 5000);
+  };
 
   // Toggle Complete
   const handleToggle = async (task) => {
@@ -349,7 +422,7 @@ export default function TaskDesk({
 
       // Tag filter
       if (activeTag !== 'ALL') {
-        if (task.tag !== activeTag) return false;
+        if ((task.tag || '').toUpperCase() !== activeTag.toUpperCase()) return false;
       }
 
       // View Filter
@@ -507,16 +580,20 @@ export default function TaskDesk({
               </select>
             </div>
             <div>
-              <label className="block text-[10px] text-neutral-600 font-pixel">CATEGORY:</label>
-              <select
+              <label className="block text-[10px] text-neutral-600 font-pixel">CATEGORY / TAG:</label>
+              <input
+                type="text"
+                list="quick-add-tags-comp"
                 value={newTag}
-                onChange={(e) => setNewTag(e.target.value)}
-                className="w-full border border-black px-1 py-1 text-xs bg-white font-mono"
-              >
-                {TAG_OPTIONS.map((t) => (
+                onChange={(e) => setNewTag(e.target.value.toUpperCase().replace(/^#/, ''))}
+                placeholder="e.g. WORK"
+                className="w-full border border-black px-1.5 py-1 text-xs bg-white font-mono uppercase"
+              />
+              <datalist id="quick-add-tags-comp">
+                {allAvailableTags.map((t) => (
                   <option key={t} value={t}>#{t}</option>
                 ))}
-              </select>
+              </datalist>
             </div>
           </div>
 
@@ -593,7 +670,7 @@ export default function TaskDesk({
         {/* Category Tag Pills */}
         <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs">
           <span className="text-[10px] font-pixel text-neutral-600 mr-1 flex-shrink-0">FILTER TAG:</span>
-          {['ALL', ...TAG_OPTIONS].map((tag) => (
+          {['ALL', ...allAvailableTags].map((tag) => (
             <button
               key={tag}
               onClick={() => { sound.playClick(); setActiveTag(tag); }}
@@ -606,6 +683,16 @@ export default function TaskDesk({
               #{tag}
             </button>
           ))}
+          {/* Retag / Change Category Button if tasks are tagged #CSV */}
+          {tasks.some(t => (t.tag || '').toUpperCase() === 'CSV') && (
+            <button
+              onClick={handleRetagCsvTasks}
+              className="px-2 py-0.5 border border-black bg-neutral-200 hover:bg-black hover:text-white font-pixel text-[9px] flex-shrink-0 ml-1 shadow-[1px_1px_0px_#000]"
+              title="Change all #CSV tasks to your custom category (e.g. PCECT303 or STUDY)"
+            >
+              [RETAG #CSV TASKS]
+            </button>
+          )}
         </div>
       </div>
 
@@ -677,7 +764,7 @@ export default function TaskDesk({
 
                     {/* Tag Badge */}
                     {task.tag && (
-                      <span className="px-1 py-0.2 border border-black bg-white">
+                      <span className="px-1 py-0.2 border border-black bg-white font-bold">
                         #{task.tag}
                       </span>
                     )}
@@ -741,7 +828,7 @@ export default function TaskDesk({
           <button
             onClick={handleTriggerCsvInput}
             className="px-2 py-1 border border-black bg-white hover:bg-black hover:text-white font-pixel text-[10px] flex items-center gap-1"
-            title="Import tasks from a CSV file (Description,Date,Time,Priority)"
+            title="Import tasks from a CSV file (Description,Date,Time,Priority,Category)"
           >
             <FileUp className="w-3 h-3" />
             <span>[+] IMPORT CSV</span>

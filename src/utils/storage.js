@@ -266,7 +266,7 @@ export class StorageManager {
       id: t.id || ('task-' + Date.now() + '-' + idx + '-' + Math.random().toString(36).substr(2, 4)),
       createdAt: t.createdAt || (Date.now() + idx),
       completed: Boolean(t.completed),
-      tag: t.tag || 'CSV',
+      tag: t.tag || 'WORK',
       reminder: t.reminder || '15m',
       notes: t.notes || '',
     }));

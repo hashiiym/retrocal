@@ -132,19 +132,21 @@ export default function TaskModal({
 
               <div>
                 <label className="block font-bold mb-1 font-pixel text-[10px]">
-                  TAG / CATEGORY:
+                  TAG / CATEGORY (CUSTOM OR PRESET):
                 </label>
-                <select
+                <input
+                  type="text"
+                  list="task-modal-tags"
                   value={tag}
-                  onChange={(e) => setTag(e.target.value)}
-                  className="w-full border-2 border-black p-1.5 bg-white shadow-[1px_1px_0px_#000]"
-                >
+                  onChange={(e) => setTag(e.target.value.toUpperCase().replace(/^#/, ''))}
+                  placeholder="e.g. WORK, DEV, STUDY"
+                  className="w-full border-2 border-black p-1.5 bg-white font-mono uppercase shadow-[1px_1px_0px_#000]"
+                />
+                <datalist id="task-modal-tags">
                   {TAG_OPTIONS.map((t) => (
-                    <option key={t} value={t}>
-                      #{t}
-                    </option>
+                    <option key={t} value={t} />
                   ))}
-                </select>
+                </datalist>
               </div>
             </div>
 
