@@ -15,6 +15,13 @@ const PRIORITY_OPTIONS = [
   { value: 'HIGH', label: '[!!!] HIGH', color: 'bg-black text-white font-bold' },
 ];
 
+// Priority rank for secondary sort ('HIGH' > 'MEDIUM' > 'LOW')
+const PRIORITY_ORDER = {
+  HIGH: 3,
+  MEDIUM: 2,
+  LOW: 1,
+};
+
 export default function TaskDesk({
   tasks,
   onAddTask,
@@ -325,36 +332,55 @@ export default function TaskDesk({
   const todayStr = new Date().toISOString().split('T')[0];
 
   const filteredTasks = useMemo(() => {
-    return tasks.filter(task => {
-      // Search
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchTitle = task.title.toLowerCase().includes(q);
-        const matchNotes = (task.notes || '').toLowerCase().includes(q);
-        const matchTag = (task.tag || '').toLowerCase().includes(q);
-        if (!matchTitle && !matchNotes && !matchTag) return false;
-      }
+    return tasks
+      .filter(task => {
+        // Search
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          const matchTitle = task.title.toLowerCase().includes(q);
+          const matchNotes = (task.notes || '').toLowerCase().includes(q);
+          const matchTag = (task.tag || '').toLowerCase().includes(q);
+          if (!matchTitle && !matchNotes && !matchTag) return false;
+        }
 
-      // Tag filter
-      if (selectedTag !== 'ALL' && task.tag !== selectedTag) {
-        return false;
-      }
+        // Tag filter
+        if (selectedTag !== 'ALL' && task.tag !== selectedTag) {
+          return false;
+        }
 
-      // Tab filter
-      if (activeTab === 'TODAY') {
-        return task.date === todayStr;
-      }
-      if (activeTab === 'UPCOMING') {
-        return task.date > todayStr;
-      }
-      if (activeTab === 'OVERDUE') {
-        return task.date < todayStr && !task.completed;
-      }
-      if (activeTab === 'DONE') {
-        return task.completed;
-      }
-      return true;
-    });
+        // Tab filter
+        if (activeTab === 'TODAY') {
+          return task.date === todayStr;
+        }
+        if (activeTab === 'UPCOMING') {
+          return task.date > todayStr;
+        }
+        if (activeTab === 'OVERDUE') {
+          return task.date < todayStr && !task.completed;
+        }
+        if (activeTab === 'DONE') {
+          return task.completed;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        // 1. Chronological sort (ascending: earliest upcoming dates appear at the top)
+        const dateA = a.date || '';
+        const dateB = b.date || '';
+        const dateDiff = dateA.localeCompare(dateB);
+        if (dateDiff !== 0) return dateDiff;
+
+        // 2. Secondary sort by priority (descending: 'HIGH' > 'MEDIUM' > 'LOW')
+        const priorityA = PRIORITY_ORDER[a.priority?.toUpperCase()] || 0;
+        const priorityB = PRIORITY_ORDER[b.priority?.toUpperCase()] || 0;
+        const priorityDiff = priorityB - priorityA;
+        if (priorityDiff !== 0) return priorityDiff;
+
+        // 3. Tertiary tie-breaker: Time ascending order
+        const timeA = a.time || '';
+        const timeB = b.time || '';
+        return timeA.localeCompare(timeB);
+      });
   }, [tasks, searchQuery, selectedTag, activeTab, todayStr]);
 
   // Stats
