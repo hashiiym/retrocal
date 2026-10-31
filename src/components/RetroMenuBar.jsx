@@ -18,6 +18,10 @@ export default function RetroMenuBar({
   onRequestNotification,
   user,
   isGCalConnected,
+  isPomodoroOpen,
+  onTogglePomodoro,
+  pomodoroTimeStr,
+  isPomodoroRunning,
 }) {
   const [timeStr, setTimeStr] = useState('');
   const [dateStr, setDateStr] = useState('');
@@ -187,6 +191,17 @@ export default function RetroMenuBar({
                 </button>
                 <div className="border-t border-black my-1"></div>
                 <button 
+                  onClick={() => { if (onTogglePomodoro) onTogglePomodoro(); setActiveMenu(null); }}
+                  className="w-full text-left px-3 py-1 hover:bg-black hover:text-white flex items-center justify-between"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span>🍅</span>
+                    <span>Pomodoro Timer</span>
+                  </span>
+                  <span>{isPomodoroOpen ? '✓' : ''}</span>
+                </button>
+                <div className="border-t border-black my-1"></div>
+                <button 
                   onClick={() => { onToggleInvert(); setActiveMenu(null); }}
                   className="w-full text-left px-3 py-1 hover:bg-black hover:text-white"
                 >
@@ -211,6 +226,25 @@ export default function RetroMenuBar({
         {/* Right: Controls, Auth UI & Live Clock */}
         <div className="flex items-center gap-2 flex-wrap">
           
+          {/* Pomodoro Timer Launcher Button */}
+          <button
+            onClick={() => { sound.playClick(); if (onTogglePomodoro) onTogglePomodoro(); }}
+            className={`px-2 py-0.5 border border-black flex items-center gap-1.5 font-pixel text-[10px] shadow-[1px_1px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-none cursor-pointer ${
+              isPomodoroOpen 
+                ? 'bg-black text-white' 
+                : isPomodoroRunning 
+                  ? 'bg-neutral-200 text-black font-bold' 
+                  : 'bg-white hover:bg-black hover:text-white'
+            }`}
+            title={isPomodoroOpen ? "Close Pomodoro Clock Popup (Timer keeps running)" : "Click to open Draggable Pomodoro Flip Clock"}
+          >
+            <span className="text-[11px]">🍅</span>
+            <span>{pomodoroTimeStr || '25:00'}</span>
+            {isPomodoroRunning && (
+              <span className={`w-1.5 h-1.5 rounded-full inline-block ${isPomodoroOpen ? 'bg-white animate-ping' : 'bg-black animate-ping'}`}></span>
+            )}
+          </button>
+
           {/* Sound FX Button */}
           <button
             onClick={() => { sound.playClick(); toggleSound(); }}

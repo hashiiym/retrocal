@@ -37,6 +37,11 @@ export default function App() {
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [currentAlert, setCurrentAlert] = useState(null);
 
+  // Draggable Pomodoro Flip Clock popup state
+  const [isPomodoroOpen, setIsPomodoroOpen] = useState(false);
+  const [pomodoroTimeStr, setPomodoroTimeStr] = useState('25:00');
+  const [isPomodoroRunning, setIsPomodoroRunning] = useState(false);
+
   // Initialize storage listeners & real-time sync
   useEffect(() => {
     const unsubTasks = storage.subscribe((updatedTasks) => {
@@ -125,10 +130,21 @@ export default function App() {
         onRequestNotification={handleRequestNotification}
         user={user}
         isGCalConnected={googleCalendar.connected}
+        isPomodoroOpen={isPomodoroOpen}
+        onTogglePomodoro={() => setIsPomodoroOpen(!isPomodoroOpen)}
+        pomodoroTimeStr={pomodoroTimeStr}
+        isPomodoroRunning={isPomodoroRunning}
       />
 
-      {/* Global Retro Pomodoro Flip Clock (anchored fixed top-12 right-4) */}
-      <RetroPomodoro />
+      {/* Draggable Retro Pomodoro Flip Clock Window */}
+      <RetroPomodoro
+        isOpen={isPomodoroOpen}
+        onClose={() => setIsPomodoroOpen(false)}
+        onTimerTick={(timeStr, running) => {
+          setPomodoroTimeStr(timeStr);
+          setIsPomodoroRunning(running);
+        }}
+      />
 
       {/* Main Workspace Desktop Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-2 sm:p-4 space-y-4">
