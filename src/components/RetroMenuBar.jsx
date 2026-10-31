@@ -22,6 +22,8 @@ export default function RetroMenuBar({
   onTogglePomodoro,
   pomodoroTimeStr,
   isPomodoroRunning,
+  isSyllabusOpen,
+  onToggleSyllabus,
 }) {
   const [timeStr, setTimeStr] = useState('');
   const [dateStr, setDateStr] = useState('');
@@ -200,6 +202,16 @@ export default function RetroMenuBar({
                   </span>
                   <span>{isPomodoroOpen ? '✓' : ''}</span>
                 </button>
+                <button 
+                  onClick={() => { if (onToggleSyllabus) onToggleSyllabus(); setActiveMenu(null); }}
+                  className={`w-full text-left px-3 py-1 hover:bg-black hover:text-white flex items-center justify-between ${isSyllabusOpen ? 'font-bold underline' : ''}`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span>📚</span>
+                    <span>Syllabus Tracker</span>
+                  </span>
+                  <span>{isSyllabusOpen ? '✓' : ''}</span>
+                </button>
                 <div className="border-t border-black my-1"></div>
                 <button 
                   onClick={() => { onToggleInvert(); setActiveMenu(null); }}
@@ -243,6 +255,20 @@ export default function RetroMenuBar({
             {isPomodoroRunning && (
               <span className={`w-1.5 h-1.5 rounded-full inline-block ${isPomodoroOpen ? 'bg-white animate-ping' : 'bg-black animate-ping'}`}></span>
             )}
+          </button>
+
+          {/* Academic Syllabus Desk Launcher Button */}
+          <button
+            onClick={() => { sound.playClick(); if (onToggleSyllabus) onToggleSyllabus(); }}
+            className={`px-2 py-0.5 border border-black flex items-center gap-1.5 font-pixel text-[10px] shadow-[1px_1px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-none cursor-pointer ${
+              isSyllabusOpen 
+                ? 'bg-black text-white' 
+                : 'bg-white hover:bg-black hover:text-white'
+            }`}
+            title="Open Academic Syllabus Desk"
+          >
+            <span className="text-[11px]">📚</span>
+            <span>SYLLABUS</span>
           </button>
 
           {/* Sound FX Button */}

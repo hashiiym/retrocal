@@ -1,0 +1,14 @@
+Subject,Module,Topic
+Computer Architecture,Module 1: Processor Datapath & Control,Single-Cycle vs Multi-Cycle Datapath
+Computer Architecture,Module 1: Processor Datapath & Control,ALU Control Logic & Microprogrammed Sequencers
+Computer Architecture,Module 2: Pipelining & Hazards,Pipelining Stages and Structural Hazards
+Computer Architecture,Module 2: Pipelining & Hazards,Data Hazards & Forwarding Paths
+Computer Architecture,Module 3: Memory Hierarchy,Direct-Mapped vs Set-Associative Caches
+Computer Architecture,Module 3: Memory Hierarchy,Virtual Memory and Translation Lookaside Buffers
+Operating Systems,Module 1: Concurrency,Process Synchronization & Semaphores
+Operating Systems,Module 1: Concurrency,Deadlock Prevention & Banker's Algorithm
+Operating Systems,Module 2: Memory Management,Paging & Multi-Level Page Tables
+Operating Systems,Module 2: Memory Management,Page Replacement Algorithms (LRU Clock FIFO)
+Operating Systems,Module 3: File Systems,Inodes & Ext4 File System Architecture
+Database Systems,Module 1: Relational Design,Functional Dependencies & Boyce-Codd Normal Form
+Database Systems,Module 2: Concurrency Control,ACID Properties & Two-Phase Locking (2PL)

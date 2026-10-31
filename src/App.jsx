@@ -10,6 +10,7 @@ import ApiGuideModal from './components/ApiGuideModal';
 import RetroAlertModal from './components/RetroAlertModal';
 import HelpModal from './components/HelpModal';
 import RetroPomodoro from './RetroPomodoro';
+import SyllabusDesk from './SyllabusDesk';
 import { storage } from './utils/storage';
 import { notifications } from './utils/notifications';
 import { googleCalendar } from './utils/googleCalendar';
@@ -41,6 +42,9 @@ export default function App() {
   const [isPomodoroOpen, setIsPomodoroOpen] = useState(false);
   const [pomodoroTimeStr, setPomodoroTimeStr] = useState('25:00');
   const [isPomodoroRunning, setIsPomodoroRunning] = useState(false);
+
+  // Academic Syllabus Desk overlay/modal state
+  const [isSyllabusOpen, setIsSyllabusOpen] = useState(false);
 
   // Initialize storage listeners & real-time sync
   useEffect(() => {
@@ -134,6 +138,8 @@ export default function App() {
         onTogglePomodoro={() => setIsPomodoroOpen(!isPomodoroOpen)}
         pomodoroTimeStr={pomodoroTimeStr}
         isPomodoroRunning={isPomodoroRunning}
+        isSyllabusOpen={isSyllabusOpen}
+        onToggleSyllabus={() => setIsSyllabusOpen(!isSyllabusOpen)}
       />
 
       {/* Draggable Retro Pomodoro Flip Clock Window */}
@@ -187,6 +193,17 @@ export default function App() {
               title="Visual Calendar focus"
             >
               CALENDAR
+            </button>
+            <div className="h-4 border-l border-black mx-0.5 hidden sm:inline-block"></div>
+            <button
+              onClick={() => { sound.playClick(); setIsSyllabusOpen(!isSyllabusOpen); }}
+              className={`px-2 py-1 text-[11px] font-pixel border border-black flex items-center gap-1.5 shadow-[1px_1px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] ${
+                isSyllabusOpen ? 'bg-black text-white font-bold' : 'bg-white hover:bg-black hover:text-white'
+              }`}
+              title="Academic Syllabus & Revision Tracker"
+            >
+              <span>📚</span>
+              <span>SYLLABUS</span>
             </button>
           </div>
         </div>
@@ -340,6 +357,12 @@ export default function App() {
         onCompleteTask={(taskId) => {
           handleUpdateTask(taskId, { completed: true });
         }}
+      />
+
+      {/* Academic Syllabus Desk Modal Overlay */}
+      <SyllabusDesk
+        isOpen={isSyllabusOpen}
+        onClose={() => setIsSyllabusOpen(false)}
       />
     </div>
   );
