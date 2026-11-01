@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Volume2, VolumeX, Bell, BellOff, Cpu, Calendar, Shield, HelpCircle, LogIn, LogOut } from 'lucide-react';
+import { Volume2, VolumeX, Bell, BellOff } from 'lucide-react';
 import { sound } from '../utils/audio';
 import { supabase, signInWithGoogle, signOut } from '../utils/storage';
 
@@ -109,27 +109,27 @@ export default function RetroMenuBar({
   };
 
   return (
-    <header className="w-full bg-white border-b-2 border-black text-xs font-mono select-none sticky top-0 z-50 shadow-[0_2px_0px_#000]">
-      <div className="max-w-7xl mx-auto px-2 py-1 flex items-center justify-between gap-2 flex-wrap">
+    <header className="w-full bg-white border-b-2 border-black text-xs font-mono select-none sticky top-0 z-50 shadow-[0_2px_0px_#000] overflow-hidden">
+      <div className="flex flex-row justify-between items-center w-full px-3 py-1.5 overflow-hidden gap-2">
         
-        {/* Left: Classic Mac Apple/Retro logo & Menus */}
-        <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
+        {/* Left Section: ■ RETROCAL V1.0, File, and View */}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* Logo badge */}
           <div 
             onClick={() => onOpenHelp()}
-            className="flex items-center gap-1 px-1.5 py-0.5 bg-black text-white font-pixel cursor-pointer hover:bg-neutral-800 tracking-wider text-[11px]"
+            className="flex items-center gap-1.5 px-2 py-0.5 bg-black text-white font-pixel cursor-pointer hover:bg-neutral-800 tracking-wider text-[11px] shrink-0"
             title="About RetroCal"
           >
             <span>■</span>
-            <span>RetroCal</span>
-            <span className="text-[9px] bg-white text-black px-1 font-bold">v1.0</span>
+            <span>RETROCAL</span>
+            <span className="text-[9px] bg-white text-black px-1 font-bold">V1.0</span>
           </div>
 
-          {/* Menu Dropdowns */}
+          {/* File Menu Dropdown */}
           <div className="relative">
             <button 
               onClick={(e) => handleMenuClick(e, 'file')}
-              className={`px-2 py-0.5 hover:bg-black hover:text-white transition-none ${activeMenu === 'file' ? 'bg-black text-white' : ''}`}
+              className={`px-2 py-0.5 hover:bg-black hover:text-white transition-none cursor-pointer ${activeMenu === 'file' ? 'bg-black text-white' : ''}`}
             >
               File
             </button>
@@ -161,10 +161,11 @@ export default function RetroMenuBar({
             )}
           </div>
 
+          {/* View Menu Dropdown */}
           <div className="relative">
             <button 
               onClick={(e) => handleMenuClick(e, 'view')}
-              className={`px-2 py-0.5 hover:bg-black hover:text-white transition-none ${activeMenu === 'view' ? 'bg-black text-white' : ''}`}
+              className={`px-2 py-0.5 hover:bg-black hover:text-white transition-none cursor-pointer ${activeMenu === 'view' ? 'bg-black text-white' : ''}`}
             >
               View
             </button>
@@ -225,26 +226,14 @@ export default function RetroMenuBar({
               </div>
             )}
           </div>
-
-          {/* Quick API Guide direct button */}
-          <button 
-            onClick={() => { sound.playClick(); onOpenApiGuide(); }}
-            className="px-2 py-0.5 border border-black bg-white hover:bg-black hover:text-white font-bold flex items-center gap-1"
-            title="Inspect required APIs as requested in PRD"
-          >
-            <Cpu className="w-3 h-3" />
-            <span className="hidden sm:inline">APIs Required</span>
-            <span className="sm:hidden">APIs</span>
-          </button>
         </div>
 
-        {/* Right: Controls, Auth UI & Live Clock */}
-        <div className="flex items-center gap-2 flex-wrap">
-          
+        {/* Middle Section: Pomodoro timer [ 25:00 ], SND:ON, and NOTIF:ACTIVE */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Pomodoro Timer Launcher Button */}
           <button
             onClick={() => { sound.playClick(); if (onTogglePomodoro) onTogglePomodoro(); }}
-            className={`px-2 py-0.5 border border-black flex items-center gap-1.5 font-pixel text-[10px] shadow-[1px_1px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-none cursor-pointer ${
+            className={`px-2 py-0.5 border border-black flex items-center gap-1.5 font-pixel text-[10px] shadow-[1px_1px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-none cursor-pointer shrink-0 ${
               isPomodoroOpen 
                 ? 'bg-black text-white' 
                 : isPomodoroRunning 
@@ -254,44 +243,16 @@ export default function RetroMenuBar({
             title={isPomodoroOpen ? "Close Pomodoro Clock Popup (Timer keeps running)" : "Click to open Draggable Pomodoro Flip Clock"}
           >
             <span className="text-[11px]">🍅</span>
-            <span>{pomodoroTimeStr || '25:00'}</span>
+            <span>[ {pomodoroTimeStr || '25:00'} ]</span>
             {isPomodoroRunning && (
               <span className={`w-1.5 h-1.5 rounded-full inline-block ${isPomodoroOpen ? 'bg-white animate-ping' : 'bg-black animate-ping'}`}></span>
             )}
           </button>
 
-          {/* Academic Syllabus Desk Launcher Button */}
-          <button
-            onClick={() => { sound.playClick(); if (onToggleSyllabus) onToggleSyllabus(); }}
-            className={`px-2 py-0.5 border border-black flex items-center gap-1.5 font-pixel text-[10px] shadow-[1px_1px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-none cursor-pointer ${
-              isSyllabusOpen 
-                ? 'bg-black text-white' 
-                : 'bg-white hover:bg-black hover:text-white'
-            }`}
-            title="Open Academic Syllabus Desk"
-          >
-            <span className="text-[11px]">📚</span>
-            <span>SYLLABUS</span>
-          </button>
-
-          {/* AI Terminal Launcher Button */}
-          <button
-            onClick={() => { sound.playClick(); if (onToggleChat) onToggleChat(); }}
-            className={`px-2 py-0.5 border border-black flex items-center gap-1.5 font-pixel text-[10px] shadow-[1px_1px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-none cursor-pointer ${
-              isChatOpen 
-                ? 'bg-black text-white' 
-                : 'bg-white hover:bg-black hover:text-white'
-            }`}
-            title="Open Groq AI Task Manager Terminal"
-          >
-            <span className="text-[11px]">🤖</span>
-            <span>[&gt;] AI TERMINAL</span>
-          </button>
-
           {/* Sound FX Button */}
           <button
             onClick={() => { sound.playClick(); toggleSound(); }}
-            className={`px-1.5 py-0.5 border border-black flex items-center gap-1 font-pixel text-[10px] ${soundEnabled ? 'bg-white hover:bg-black hover:text-white' : 'bg-neutral-200 text-neutral-600'}`}
+            className={`px-1.5 py-0.5 border border-black flex items-center gap-1 font-pixel text-[10px] shrink-0 cursor-pointer ${soundEnabled ? 'bg-white hover:bg-black hover:text-white' : 'bg-neutral-200 text-neutral-600'}`}
             title="Toggle 8-bit retro sound synthesizer"
           >
             {soundEnabled ? <Volume2 className="w-3 h-3" /> : <VolumeX className="w-3 h-3" />}
@@ -301,27 +262,29 @@ export default function RetroMenuBar({
           {/* Browser Notifications Bell */}
           <button
             onClick={() => { sound.playClick(); onRequestNotification(); }}
-            className={`px-1.5 py-0.5 border border-black flex items-center gap-1 font-pixel text-[10px] ${notificationPermission === 'granted' ? 'bg-black text-white' : 'bg-white hover:bg-black hover:text-white'}`}
+            className={`px-1.5 py-0.5 border border-black flex items-center gap-1 font-pixel text-[10px] shrink-0 cursor-pointer ${notificationPermission === 'granted' ? 'bg-black text-white' : 'bg-white hover:bg-black hover:text-white'}`}
             title={notificationPermission === 'granted' ? 'Push Notifications Active' : 'Click to enable Web Notifications'}
           >
             {notificationPermission === 'granted' ? <Bell className="w-3 h-3" /> : <BellOff className="w-3 h-3" />}
             <span className="hidden md:inline">{notificationPermission === 'granted' ? 'NOTIF:ACTIVE' : 'NOTIF:OFF'}</span>
           </button>
+        </div>
 
-          {/* Supabase Authentication UI: Google Sign In / User Email & Sign Out */}
+        {/* Right Section: User email, [SIGN OUT], and the Clock */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {sessionUser ? (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 shrink-0">
               <div
                 onClick={() => { sound.playClick(); onOpenAuth(); }}
                 className="px-2 py-0.5 border border-black bg-neutral-100 hover:bg-neutral-200 flex items-center gap-1.5 cursor-pointer text-[11px] shadow-[1px_1px_0px_#000]"
                 title={`Authenticated as ${sessionUser.email}`}
               >
-                <span className="w-2 h-2 rounded-full border border-black bg-green-500 inline-block"></span>
-                <span className="max-w-[120px] sm:max-w-[180px] truncate font-bold">{sessionUser.email}</span>
+                <span className="w-2 h-2 rounded-full border border-black bg-green-500 inline-block shrink-0"></span>
+                <span className="max-w-[120px] sm:max-w-[160px] truncate font-bold">{sessionUser.email}</span>
               </div>
               <button
                 onClick={handleSignOut}
-                className="px-1.5 py-0.5 border border-black bg-white hover:bg-black hover:text-white font-pixel text-[9px] shadow-[1px_1px_0px_#000]"
+                className="px-1.5 py-0.5 border border-black bg-white hover:bg-black hover:text-white font-pixel text-[9px] shadow-[1px_1px_0px_#000] cursor-pointer shrink-0"
                 title="Sign out of account"
               >
                 [SIGN OUT]
@@ -330,7 +293,7 @@ export default function RetroMenuBar({
           ) : (
             <button
               onClick={handleGoogleSignIn}
-              className="px-2 py-0.5 border-2 border-black bg-white hover:bg-black hover:text-white font-pixel text-[10px] flex items-center gap-1 shadow-[2px_2px_0px_#000] active:translate-x-[1px] active:translate-y-[1px]"
+              className="px-2 py-0.5 border-2 border-black bg-white hover:bg-black hover:text-white font-pixel text-[10px] flex items-center gap-1 shadow-[2px_2px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] cursor-pointer shrink-0"
               title="Sign in with Google via Supabase Authentication"
             >
               <span>[SIGN IN WITH GOOGLE]</span>
@@ -338,7 +301,7 @@ export default function RetroMenuBar({
           )}
 
           {/* Digital Clock */}
-          <div className="border border-black px-2 py-0.5 bg-white font-term text-sm tracking-widest font-bold">
+          <div className="border border-black px-2 py-0.5 bg-white font-term text-sm tracking-widest font-bold shrink-0">
             <span className="hidden sm:inline mr-1 opacity-70">{dateStr}</span>
             <span>{timeStr}</span>
           </div>
