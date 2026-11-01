@@ -4,12 +4,14 @@ import { sound } from './utils/audio';
 import { Send, Terminal, Trash2 } from 'lucide-react';
 
 /**
- * Fetches the current user's incomplete items from Supabase 'tasks' and 'syllabus' tables.
- * Falls back to local storage if user is offline or using demo mode.
+ * Fetches and minifies the user's task and syllabus context to prevent 413 token overflow.
+ * - Filters tasks to pending within next 7 days, capped at 25 items.
+ * - Formats tasks as: ${t.date} ${t.time} | ${t.priority} | ${t.tag} | ${t.title}
+ * - Replaces full syllabus array with a high-level subject progress summary.
  */
-async function fetchIncompleteContext() {
-  let incompleteTasks = [];
-  let incompleteSyllabus = [];
+async function fetchMinifiedContext() {
+  let allTasks = [];
+  let allSyllabus = [];
 
   try {
     let userId = null;
@@ -22,12 +24,12 @@ async function fetchIncompleteContext() {
       }
     }
 
-    // 1. Fetch incomplete tasks from Supabase
+    // 1. Fetch pending tasks from Supabase
     if (supabase) {
       try {
         let taskQuery = supabase
           .from('tasks')
-          .select('id, title, date, time, priority, tag, notes, reminder, completed')
+          .select('title, date, time, priority, tag, completed')
           .eq('completed', false);
 
         if (userId) {
@@ -36,36 +38,34 @@ async function fetchIncompleteContext() {
 
         const { data, error } = await taskQuery;
         if (!error && Array.isArray(data) && data.length > 0) {
-          incompleteTasks = data;
+          allTasks = data;
         }
       } catch (err) {
-        console.warn('Supabase incomplete tasks fetch error:', err);
+        console.warn('Supabase tasks fetch error:', err);
       }
     }
 
     // Fallback to local storage tasks if Supabase query returned no items
-    if (incompleteTasks.length === 0) {
+    if (allTasks.length === 0) {
       const localTasks = storage.getTasks() || [];
-      incompleteTasks = localTasks
+      allTasks = localTasks
         .filter(t => !t.completed)
         .map(t => ({
-          id: t.id,
           title: t.title,
           date: t.date,
           time: t.time,
           priority: t.priority,
           tag: t.tag,
-          notes: t.notes,
-          reminder: t.reminder,
+          completed: false,
         }));
     }
 
-    // 2. Fetch incomplete syllabus items from Supabase
+    // 2. Fetch syllabus items from Supabase for high-level progress summary
     if (supabase) {
       try {
         let sylQuery = supabase
           .from('syllabus')
-          .select('id, subject, module_name, topic, is_learned, is_revised');
+          .select('subject, is_learned');
 
         if (userId) {
           sylQuery = sylQuery.eq('user_id', userId);
@@ -73,7 +73,7 @@ async function fetchIncompleteContext() {
 
         const { data, error } = await sylQuery;
         if (!error && Array.isArray(data) && data.length > 0) {
-          incompleteSyllabus = data.filter(s => !s.is_learned || !s.is_revised);
+          allSyllabus = data;
         }
       } catch (err) {
         console.warn('Supabase syllabus fetch error:', err);
@@ -81,13 +81,13 @@ async function fetchIncompleteContext() {
     }
 
     // Fallback to local storage syllabus if Supabase query returned no items
-    if (incompleteSyllabus.length === 0) {
+    if (allSyllabus.length === 0) {
       try {
         const saved = localStorage.getItem('retrocal_syllabus_v1');
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) {
-            incompleteSyllabus = parsed.filter(s => !s.is_learned || !s.is_revised);
+            allSyllabus = parsed;
           }
         }
       } catch (err) {
@@ -95,16 +95,60 @@ async function fetchIncompleteContext() {
       }
     }
   } catch (err) {
-    console.error('Failed to compile incomplete context:', err);
+    console.error('Failed to compile minified context:', err);
   }
 
+  // Filter pending tasks for the next 7 days, max 25 items
+  const today = new Date().toISOString().split('T')[0];
+  const maxDate = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+
+  const filteredTasks = allTasks
+    .filter(t => !t.completed && (!t.date || t.date <= maxDate))
+    .sort((a, b) => {
+      const dateA = a.date || today;
+      const dateB = b.date || today;
+      if (dateA !== dateB) return dateA.localeCompare(dateB);
+      return (a.time || '').localeCompare(b.time || '');
+    })
+    .slice(0, 25);
+
+  // Minify tasks to compact string: ${t.date} ${t.time} | ${t.priority} | ${t.tag} | ${t.title}
+  const minifiedTasksText = filteredTasks.length > 0
+    ? filteredTasks
+        .map(t => `${t.date || today} ${t.time || '10:00'} | ${t.priority || 'MEDIUM'} | ${t.tag || '#WORK'} | ${t.title}`)
+        .join('\n')
+    : 'NO PENDING TASKS FOR NEXT 7 DAYS.';
+
+  // High-level syllabus progress summary grouped by subject (is_learned vs total)
+  const syllabusBySubject = {};
+  allSyllabus.forEach(item => {
+    const subj = (item.subject || 'GENERAL STUDIES').toUpperCase().trim();
+    if (!syllabusBySubject[subj]) {
+      syllabusBySubject[subj] = { total: 0, learned: 0 };
+    }
+    syllabusBySubject[subj].total += 1;
+    if (item.is_learned) syllabusBySubject[subj].learned += 1;
+  });
+
+  const syllabusSummaryText = Object.keys(syllabusBySubject).length > 0
+    ? Object.entries(syllabusBySubject)
+        .map(([subj, counts]) => `${subj}: ${counts.learned}/${counts.total} topics learned (${Math.round((counts.learned / counts.total) * 100)}%)`)
+        .join('\n')
+    : 'NO SYLLABUS TOPICS LOGGED.';
+
+  // Combined compact plaintext format
+  const compressedContext = `[PENDING TASKS (NEXT 7 DAYS, MAX 25)]:
+${minifiedTasksText}
+
+[SYLLABUS PROGRESS SUMMARY BY SUBJECT]:
+${syllabusSummaryText}`;
+
   return {
-    tasks: incompleteTasks,
-    syllabus: incompleteSyllabus,
+    compressedContext,
     stats: {
-      pendingTasksCount: incompleteTasks.length,
-      pendingSyllabusCount: incompleteSyllabus.length,
-      timestamp: new Date().toISOString(),
+      tasks: filteredTasks.length,
+      subjects: Object.keys(syllabusBySubject).length,
+      totalTopics: allSyllabus.length,
     },
   };
 }
@@ -137,11 +181,8 @@ export default function ChatDesk({ isOpen, onClose, setTasks }) {
       scrollToBottom();
       setTimeout(() => inputRef.current?.focus(), 100);
       // Preload context stats
-      fetchIncompleteContext().then(ctx => {
-        setContextStats({
-          tasks: ctx.tasks.length,
-          syllabus: ctx.syllabus.length,
-        });
+      fetchMinifiedContext().then(ctx => {
+        setContextStats(ctx.stats);
       });
     }
   }, [isOpen]);
@@ -172,14 +213,11 @@ export default function ChatDesk({ isOpen, onClose, setTasks }) {
     setIsLoading(true);
 
     try {
-      // b. Fetch current user's incomplete items from Supabase tasks & syllabus tables
-      const contextData = await fetchIncompleteContext();
-      setContextStats({
-        tasks: contextData.tasks.length,
-        syllabus: contextData.syllabus.length,
-      });
+      // b. Fetch minified upcoming tasks (7 days, max 25) & syllabus progress summary
+      const contextInfo = await fetchMinifiedContext();
+      setContextStats(contextInfo.stats);
 
-      // c. Send POST request to /api/chat endpoint with userMessage and contextData
+      // c. Send POST request to /api/chat with compressed plaintext contextData
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -187,7 +225,7 @@ export default function ChatDesk({ isOpen, onClose, setTasks }) {
         },
         body: JSON.stringify({
           userMessage: prompt,
-          contextData: JSON.stringify(contextData),
+          contextData: contextInfo.compressedContext,
         }),
       });
 
@@ -363,7 +401,7 @@ export default function ChatDesk({ isOpen, onClose, setTasks }) {
           <div className="flex items-center gap-2 text-[10px] text-neutral-400">
             {contextStats ? (
               <span>
-                LIVE CONTEXT: <strong className="text-white">{contextStats.tasks}</strong> PENDING TASKS, <strong className="text-white">{contextStats.syllabus}</strong> PENDING SYLLABUS
+                LIVE CONTEXT: <strong className="text-white">{contextStats.tasks}</strong> TASKS (7D), <strong className="text-white">{contextStats.subjects}</strong> SUBJECTS
               </span>
             ) : (
               <span>FETCHING CONTEXT BUFFERS...</span>
