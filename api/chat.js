@@ -29,16 +29,16 @@ export default async function handler(req, res) {
 
     const groq = new Groq({ apiKey });
 
-    const systemPrompt = "You are a concise, retro-styled AI task manager. You help the user optimize their study schedule. Use the provided JSON context of their tasks and syllabus to answer their questions accurately. Keep responses short, direct, and actionable.";
+    const systemPrompt = "You are a concise, retro-styled AI task manager. You help the user optimize their study schedule. Use the provided compressed plaintext context of their upcoming tasks (formatted as: DATE TIME | PRIORITY | TAG | TITLE) and syllabus progress summary by subject to answer their questions accurately. Keep responses short, direct, and actionable. When the user asks to create, add, or schedule a task, invoke the create_task function.";
 
     const contextString = typeof contextData === 'string' 
       ? contextData 
-      : JSON.stringify(contextData || { tasks: [], syllabus: [] }, null, 2);
+      : (contextData?.compressedPayload || JSON.stringify(contextData || 'NO CONTEXT AVAILABLE'));
 
     const messages = [
       {
         role: 'system',
-        content: `${systemPrompt}\n\n[USER SYSTEM CONTEXT DATA]:\n${contextString}`,
+        content: `${systemPrompt}\n\n[USER COMPRESSED CONTEXT]:\n${contextString}`,
       },
       {
         role: 'user',
