@@ -22,6 +22,8 @@ export default function RetroMenuBar({
   isPomodoroRunning,
   isSyllabusOpen,
   onToggleSyllabus,
+  isChatOpen,
+  onToggleChat,
 }) {
   const [timeStr, setTimeStr] = useState('');
   const [dateStr, setDateStr] = useState('');
@@ -210,6 +212,16 @@ export default function RetroMenuBar({
                   </span>
                   <span>{isSyllabusOpen ? '✓' : ''}</span>
                 </button>
+                <button 
+                  onClick={() => { if (onToggleChat) onToggleChat(); setActiveMenu(null); }}
+                  className={`w-full text-left px-3 py-1 hover:bg-black hover:text-white flex items-center justify-between ${isChatOpen ? 'font-bold underline' : ''}`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span>🤖</span>
+                    <span>AI Terminal</span>
+                  </span>
+                  <span>{isChatOpen ? '✓' : ''}</span>
+                </button>
               </div>
             )}
           </div>
@@ -260,6 +272,20 @@ export default function RetroMenuBar({
           >
             <span className="text-[11px]">📚</span>
             <span>SYLLABUS</span>
+          </button>
+
+          {/* AI Terminal Launcher Button */}
+          <button
+            onClick={() => { sound.playClick(); if (onToggleChat) onToggleChat(); }}
+            className={`px-2 py-0.5 border border-black flex items-center gap-1.5 font-pixel text-[10px] shadow-[1px_1px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-none cursor-pointer ${
+              isChatOpen 
+                ? 'bg-black text-white' 
+                : 'bg-white hover:bg-black hover:text-white'
+            }`}
+            title="Open Groq AI Task Manager Terminal"
+          >
+            <span className="text-[11px]">🤖</span>
+            <span>[&gt;] AI TERMINAL</span>
           </button>
 
           {/* Sound FX Button */}
