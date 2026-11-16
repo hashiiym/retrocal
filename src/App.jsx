@@ -12,6 +12,7 @@ import HelpModal from './components/HelpModal';
 import RetroPomodoro from './RetroPomodoro';
 import SyllabusDesk from './SyllabusDesk';
 import ChatDesk from './ChatDesk';
+import PowerNapOverlay from './PowerNapOverlay';
 import { storage } from './utils/storage';
 import { notifications } from './utils/notifications';
 import { googleCalendar } from './utils/googleCalendar';
@@ -48,6 +49,9 @@ export default function App() {
 
   // Retro AI Task Manager Chat Desk overlay state
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Power Nap countdown alarm overlay state
+  const [isNapOpen, setIsNapOpen] = useState(false);
 
   // Initialize storage listeners & real-time sync
   useEffect(() => {
@@ -143,6 +147,8 @@ export default function App() {
         onToggleSyllabus={() => setIsSyllabusOpen(!isSyllabusOpen)}
         isChatOpen={isChatOpen}
         onToggleChat={() => setIsChatOpen(!isChatOpen)}
+        isNapOpen={isNapOpen}
+        onToggleNap={() => setIsNapOpen(!isNapOpen)}
       />
 
       {/* Draggable Retro Pomodoro Flip Clock Window */}
@@ -217,6 +223,16 @@ export default function App() {
             >
               <span>🤖</span>
               <span>[&gt;] AI TERMINAL</span>
+            </button>
+            <button
+              onClick={() => { sound.playClick(); setIsNapOpen(!isNapOpen); }}
+              className={`px-2 py-1 text-[11px] font-pixel border border-black flex items-center gap-1.5 shadow-[1px_1px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] ${
+                isNapOpen ? 'bg-black text-white font-bold' : 'bg-white hover:bg-black hover:text-white'
+              }`}
+              title="Power Nap Countdown Alarm"
+            >
+              <span>💤</span>
+              <span>[zZ] NAP</span>
             </button>
           </div>
         </div>
@@ -383,6 +399,12 @@ export default function App() {
         isOpen={isChatOpen}
         onClose={() => setIsChatOpen(false)}
         setTasks={setTasks}
+      />
+
+      {/* Power Nap Countdown Alarm Overlay */}
+      <PowerNapOverlay
+        isOpen={isNapOpen}
+        onClose={() => setIsNapOpen(false)}
       />
     </div>
   );

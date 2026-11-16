@@ -24,6 +24,8 @@ export default function RetroMenuBar({
   onToggleSyllabus,
   isChatOpen,
   onToggleChat,
+  isNapOpen,
+  onToggleNap,
 }) {
   const [timeStr, setTimeStr] = useState('');
   const [dateStr, setDateStr] = useState('');
@@ -223,6 +225,16 @@ export default function RetroMenuBar({
                   </span>
                   <span>{isChatOpen ? '✓' : ''}</span>
                 </button>
+                <button 
+                  onClick={() => { if (onToggleNap) onToggleNap(); setActiveMenu(null); }}
+                  className={`w-full text-left px-3 py-1 hover:bg-black hover:text-white flex items-center justify-between ${isNapOpen ? 'font-bold underline' : ''}`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span>💤</span>
+                    <span>Power Nap</span>
+                  </span>
+                  <span>{isNapOpen ? '✓' : ''}</span>
+                </button>
               </div>
             )}
           </div>
@@ -247,6 +259,18 @@ export default function RetroMenuBar({
             {isPomodoroRunning && (
               <span className={`w-1.5 h-1.5 rounded-full inline-block ${isPomodoroOpen ? 'bg-white animate-ping' : 'bg-black animate-ping'}`}></span>
             )}
+          </button>
+
+          {/* Power Nap Timer Button */}
+          <button
+            onClick={() => { sound.playClick(); if (onToggleNap) onToggleNap(); }}
+            className={`px-2 py-0.5 border border-black flex items-center gap-1 font-pixel text-[10px] shadow-[1px_1px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-none cursor-pointer shrink-0 ${
+              isNapOpen ? 'bg-black text-white' : 'bg-white hover:bg-black hover:text-white'
+            }`}
+            title="Power Nap Countdown Alarm"
+          >
+            <span>💤</span>
+            <span className="hidden md:inline">[zZ] NAP</span>
           </button>
 
           {/* Sound FX Button */}
